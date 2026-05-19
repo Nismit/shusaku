@@ -44,9 +44,8 @@ const FUNCTION_NAMES = [
 
 const COLS = 6;
 const ROWS = 5;
-const CELL_SIZE = 400; // px per cell (square)
-const GAP_SIZE = 24;   // px gap between cells
-const STRIDE = CELL_SIZE + GAP_SIZE;
+const BASE_CELL_SIZE = 400; // px at zoom=1
+const BASE_STRIDE = 424;    // cell + gap at zoom=1
 
 export const main = () => {
   const canvas = document.createElement('canvas');
@@ -62,7 +61,20 @@ export const main = () => {
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-  // Pan offset (world pixels shown at screen origin)
+  const settings = {
+    colorA: '#1a1a2e',
+    alphaA: 1.0,
+    colorB: '#eaf4f4',
+    alphaB: 1.0,
+    animate: true,
+    showLabels: true,
+    zoom: 0.45,
+  };
+
+  const getCellSize = () => Math.round(BASE_CELL_SIZE * settings.zoom);
+  const getStride   = () => Math.round(BASE_STRIDE   * settings.zoom);
+
+  // Pan offset (world pixels at screen origin)
   const offset = { x: 0, y: 0 };
 
   // Drag state
@@ -114,31 +126,6 @@ export const main = () => {
 
   canvas.addEventListener('touchend', () => { lastTouch = null; });
 
-  // GUI settings
-  const settings = {
-    colorA: '#1a1a2e',
-    alphaA: 1.0,
-    colorB: '#eaf4f4',
-    alphaB: 1.0,
-    animate: true,
-    showLabels: true,
-  };
-
-  function hexToRGBA(hex, alpha) {
-    const r = parseInt(hex.slice(1, 3), 16) / 255;
-    const g = parseInt(hex.slice(3, 5), 16) / 255;
-    const b = parseInt(hex.slice(5, 7), 16) / 255;
-    return [r, g, b, alpha];
-  }
-
-  const gui = new GUI({ title: 'Mix Functions' });
-  gui.addColor(settings, 'colorA').name('Color A');
-  gui.add(settings, 'alphaA', 0, 1, 0.01).name('Alpha A');
-  gui.addColor(settings, 'colorB').name('Color B');
-  gui.add(settings, 'alphaB', 0, 1, 0.01).name('Alpha B');
-  gui.add(settings, 'animate').name('Animate');
-  gui.add(settings, 'showLabels').name('Show Labels').onChange(updateLabels);
-
   // Labels overlay
   const labelsContainer = document.createElement('div');
   labelsContainer.id = 'labels';
@@ -157,21 +144,23 @@ export const main = () => {
     labelsContainer.innerHTML = '';
     if (!settings.showLabels) return;
 
-    // Compute visible slot range
-    const minCol = Math.floor(offset.x / STRIDE) - 1;
-    const maxCol = Math.ceil((offset.x + canvas.width) / STRIDE);
-    const minRow = Math.floor(offset.y / STRIDE) - 1;
-    const maxRow = Math.ceil((offset.y + canvas.height) / STRIDE);
+    const cellSize = getCellSize();
+    const stride   = getStride();
+    const fontSize = Math.max(9, Math.round(13 * settings.zoom));
+
+    const minCol = Math.floor(offset.x / stride) - 1;
+    const maxCol = Math.ceil((offset.x + canvas.width) / stride);
+    const minRow = Math.floor(offset.y / stride) - 1;
+    const maxRow = Math.ceil((offset.y + canvas.height) / stride);
 
     for (let row = minRow; row <= maxRow; row++) {
       for (let col = minCol; col <= maxCol; col++) {
-        const screenX = col * STRIDE - offset.x;
-        const screenY = row * STRIDE - offset.y;
+        const screenX = col * stride - offset.x;
+        const screenY = row * stride - offset.y;
 
-        if (screenX + CELL_SIZE < 0 || screenX > canvas.width) continue;
-        if (screenY + CELL_SIZE < 0 || screenY > canvas.height) continue;
+        if (screenX + cellSize < 0 || screenX > canvas.width) continue;
+        if (screenY + cellSize < 0 || screenY > canvas.height) continue;
 
-        // Wrap to function ID (infinite repeat)
         const wrappedCol = ((col % COLS) + COLS) % COLS;
         const wrappedRow = ((row % ROWS) + ROWS) % ROWS;
         const funcId = wrappedRow * COLS + wrappedCol;
@@ -182,10 +171,10 @@ export const main = () => {
           position: absolute;
           left: ${screenX}px;
           top: ${screenY}px;
-          width: ${CELL_SIZE}px;
-          padding: 6px 12px;
+          width: ${cellSize}px;
+          padding: 4px 8px;
           font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-          font-size: 13px;
+          font-size: ${fontSize}px;
           color: rgba(255, 255, 255, 0.9);
           text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
           box-sizing: border-box;
@@ -194,6 +183,27 @@ export const main = () => {
       }
     }
   }
+
+  // GUI
+  const gui = new GUI({ title: 'Mix Functions' });
+  gui.addColor(settings, 'colorA').name('Color A');
+  gui.add(settings, 'alphaA', 0, 1, 0.01).name('Alpha A');
+  gui.addColor(settings, 'colorB').name('Color B');
+  gui.add(settings, 'alphaB', 0, 1, 0.01).name('Alpha B');
+  gui.add(settings, 'animate').name('Animate');
+  gui.add(settings, 'showLabels').name('Show Labels').onChange(updateLabels);
+
+  // Zoom: scale toward screen center
+  let prevStride = getStride();
+  gui.add(settings, 'zoom', 0.1, 2.0, 0.05).name('Zoom').onChange(() => {
+    const newStride = getStride();
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    offset.x = (cx + offset.x) / prevStride * newStride - cx;
+    offset.y = (cy + offset.y) / prevStride * newStride - cy;
+    prevStride = newStride;
+    updateLabels();
+  });
 
   updateLabels();
 
@@ -209,8 +219,8 @@ export const main = () => {
     shader.setUniform('iTime', time);
     shader.setUniform('iResolution', [canvas.width, canvas.height]);
     shader.setUniform('iOffset', [offset.x, offset.y]);
-    shader.setUniform('iCellSize', CELL_SIZE);
-    shader.setUniform('iStride', STRIDE);
+    shader.setUniform('iCellSize', getCellSize());
+    shader.setUniform('iStride', getStride());
     shader.setUniform('iColorA', hexToRGBA(settings.colorA, settings.alphaA));
     shader.setUniform('iColorB', hexToRGBA(settings.colorB, settings.alphaB));
     shader.setUniform('iAnimate', settings.animate ? 1 : 0);
@@ -223,3 +233,10 @@ export const main = () => {
   render();
   timer.start();
 };
+
+function hexToRGBA(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  return [r, g, b, alpha];
+}
