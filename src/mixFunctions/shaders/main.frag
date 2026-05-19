@@ -9,6 +9,7 @@ uniform float iTime;
 uniform vec2 iResolution;
 uniform vec2 iOffset;
 uniform float iCellSize;
+uniform float iStride;
 uniform vec4 iColorA;  // RGBA
 uniform vec4 iColorB;  // RGBA
 uniform int iShowLabels;
@@ -504,48 +505,46 @@ float sdSegment(vec2 p, vec2 a, vec2 b) {
 void main() {
   // Screen pixel coords: origin top-left, Y increases downward
   vec2 screenPx = vec2(vTexCoord.x, 1.0 - vTexCoord.y) * iResolution;
-  // Apply scroll offset to get world position
   vec2 worldPx = screenPx + iOffset;
 
-  // Grid cell from world position
-  int col = int(floor(worldPx.x / iCellSize));
-  int row = int(floor(worldPx.y / iCellSize));
+  // Slot index and position within slot
+  vec2 slotIdx = floor(worldPx / iStride);
+  vec2 slotUV  = fract(worldPx / iStride);
 
-  // Background for out-of-grid areas
-  if (col < 0 || col >= NUM_COLS || row < 0 || row >= NUM_ROWS) {
+  float cellFrac = iCellSize / iStride;
+
+  // Gap between cells → background
+  if (slotUV.x >= cellFrac || slotUV.y >= cellFrac) {
     fragColor = vec4(0.1, 0.1, 0.1, 1.0);
     return;
   }
 
+  // Remap to 0-1 within just the cell area
+  vec2 cellUV = slotUV / cellFrac;
+
+  // Infinite tiling via modulo (handles negative indices correctly)
+  int col = int(mod(slotIdx.x, float(NUM_COLS)));
+  int row = int(mod(slotIdx.y, float(NUM_ROWS)));
   int funcId = row * NUM_COLS + col;
 
-  // Cell UV (0-1 within cell)
-  vec2 cellUV = fract(worldPx / iCellSize);
-
-  // Add padding
-  float padding = 0.05;
+  // Inner padding
+  float padding = 0.04;
   vec2 paddedUV = (cellUV - padding) / (1.0 - 2.0 * padding);
 
-  // Time for animation
   float time = iAnimate == 1 ? iTime : 0.0;
 
-  // Get mix value
   FunctionResult fn = getMixValue(funcId, paddedUV, time);
-
-  // Mix colors (RGBA)
   vec4 col4 = mix(iColorA, iColorB, fn.value);
 
-  // Draw border
-  float borderWidth = 0.01;
+  float borderWidth = 0.008;
   float border = 1.0 - step(borderWidth, cellUV.x) * step(borderWidth, cellUV.y)
                      * step(borderWidth, 1.0 - cellUV.x) * step(borderWidth, 1.0 - cellUV.y);
 
-  // Padding area (darker, opaque)
   float inPadding = step(padding, cellUV.x) * step(padding, cellUV.y)
                   * step(padding, 1.0 - cellUV.x) * step(padding, 1.0 - cellUV.y);
 
   vec4 paddingColor = vec4(0.15, 0.15, 0.15, 1.0);
-  vec4 borderColor = vec4(0.3, 0.3, 0.3, 1.0);
+  vec4 borderColor  = vec4(0.3, 0.3, 0.3, 1.0);
 
   vec4 finalColor = col4 * inPadding + paddingColor * (1.0 - inPadding);
   finalColor = mix(finalColor, borderColor, border);
