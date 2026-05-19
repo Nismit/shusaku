@@ -4,7 +4,6 @@ import GUI from '../libs/lil-gui.esm.min.js';
 
 import mainFragment from './shaders/main.frag?raw';
 
-// Function names for reference overlay
 const FUNCTION_NAMES = [
   // Row 1: Basic
   'linear (uv.x)',
@@ -43,6 +42,9 @@ const FUNCTION_NAMES = [
   'sine grid',
 ];
 
+const COLS = 6;
+const ROWS = 5;
+
 export const main = () => {
   const canvas = document.createElement('canvas');
   document.body.appendChild(canvas);
@@ -52,12 +54,68 @@ export const main = () => {
   chotto.fitWindow();
 
   const shader = chotto.createShader({ fragment: mainFragment });
-
   const gl = chotto.gl;
 
-  // Enable alpha blending
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+  // Square cell size: fit all functions in the initial viewport
+  const cellSize = Math.floor(Math.min(canvas.width / COLS, canvas.height / ROWS));
+
+  // Pan offset: start with grid centered in viewport
+  const offset = {
+    x: (COLS * cellSize - canvas.width) / 2,
+    y: (ROWS * cellSize - canvas.height) / 2,
+  };
+
+  // Drag state
+  let isDragging = false;
+  let dragLast = { x: 0, y: 0 };
+
+  canvas.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    dragLast = { x: e.clientX, y: e.clientY };
+    canvas.classList.add('dragging');
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    offset.x -= e.clientX - dragLast.x;
+    offset.y -= e.clientY - dragLast.y;
+    dragLast = { x: e.clientX, y: e.clientY };
+    updateLabels();
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDragging = false;
+    canvas.classList.remove('dragging');
+  });
+
+  // Wheel scroll (horizontal + vertical)
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    offset.x += e.deltaX;
+    offset.y += e.deltaY;
+    updateLabels();
+  }, { passive: false });
+
+  // Touch panning
+  let lastTouch = null;
+  canvas.addEventListener('touchstart', (e) => {
+    lastTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, { passive: true });
+
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const dx = e.touches[0].clientX - lastTouch.x;
+    const dy = e.touches[0].clientY - lastTouch.y;
+    offset.x -= dx;
+    offset.y -= dy;
+    lastTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    updateLabels();
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', () => { lastTouch = null; });
 
   // GUI settings
   const settings = {
@@ -69,21 +127,13 @@ export const main = () => {
     showLabels: true,
   };
 
-  // Parse hex to RGB (0-1)
-  function hexToRGB(hex) {
+  function hexToRGBA(hex, alpha) {
     const r = parseInt(hex.slice(1, 3), 16) / 255;
     const g = parseInt(hex.slice(3, 5), 16) / 255;
     const b = parseInt(hex.slice(5, 7), 16) / 255;
-    return [r, g, b];
+    return [r, g, b, alpha];
   }
 
-  // Parse hex + alpha to RGBA (0-1)
-  function hexToRGBA(hex, alpha) {
-    const rgb = hexToRGB(hex);
-    return [...rgb, alpha];
-  }
-
-  // lil-gui setup
   const gui = new GUI({ title: 'Mix Functions' });
   gui.addColor(settings, 'colorA').name('Color A');
   gui.add(settings, 'alphaA', 0, 1, 0.01).name('Alpha A');
@@ -92,7 +142,7 @@ export const main = () => {
   gui.add(settings, 'animate').name('Animate');
   gui.add(settings, 'showLabels').name('Show Labels').onChange(updateLabels);
 
-  // Create labels overlay
+  // Labels overlay
   const labelsContainer = document.createElement('div');
   labelsContainer.id = 'labels';
   labelsContainer.style.cssText = `
@@ -110,23 +160,26 @@ export const main = () => {
     labelsContainer.innerHTML = '';
     if (!settings.showLabels) return;
 
-    const cols = 6;
-    const rows = 5;
-    const cellWidth = 100 / cols;
-    const cellHeight = 100 / rows;
-
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const idx = row * cols + col;
+    for (let row = 0; row < ROWS; row++) {
+      for (let col = 0; col < COLS; col++) {
+        const idx = row * COLS + col;
         if (idx >= FUNCTION_NAMES.length) continue;
+
+        // World-to-screen: subtract the scroll offset
+        const screenX = col * cellSize - offset.x;
+        const screenY = row * cellSize - offset.y;
+
+        // Skip cells outside the viewport
+        if (screenX + cellSize < 0 || screenX > canvas.width) continue;
+        if (screenY + cellSize < 0 || screenY > canvas.height) continue;
 
         const label = document.createElement('div');
         label.textContent = FUNCTION_NAMES[idx];
         label.style.cssText = `
           position: absolute;
-          left: ${col * cellWidth}%;
-          top: ${row * cellHeight}%;
-          width: ${cellWidth}%;
+          left: ${screenX}px;
+          top: ${screenY}px;
+          width: ${cellSize}px;
           padding: 4px 8px;
           font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
           font-size: 11px;
@@ -139,10 +192,8 @@ export const main = () => {
     }
   }
 
-  // Initial labels
   updateLabels();
 
-  // Resize handler
   window.addEventListener('resize', updateLabels);
 
   // Render loop
@@ -154,6 +205,8 @@ export const main = () => {
     shader.use();
     shader.setUniform('iTime', time);
     shader.setUniform('iResolution', [canvas.width, canvas.height]);
+    shader.setUniform('iOffset', [offset.x, offset.y]);
+    shader.setUniform('iCellSize', cellSize);
     shader.setUniform('iColorA', hexToRGBA(settings.colorA, settings.alphaA));
     shader.setUniform('iColorB', hexToRGBA(settings.colorB, settings.alphaB));
     shader.setUniform('iAnimate', settings.animate ? 1 : 0);

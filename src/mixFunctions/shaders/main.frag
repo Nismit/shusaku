@@ -7,6 +7,8 @@ out vec4 fragColor;
 
 uniform float iTime;
 uniform vec2 iResolution;
+uniform vec2 iOffset;
+uniform float iCellSize;
 uniform vec4 iColorA;  // RGBA
 uniform vec4 iColorB;  // RGBA
 uniform int iShowLabels;
@@ -500,19 +502,25 @@ float sdSegment(vec2 p, vec2 a, vec2 b) {
 // ============================================
 
 void main() {
-  vec2 uv = vTexCoord;
-  float aspect = iResolution.x / iResolution.y;
+  // Screen pixel coords: origin top-left, Y increases downward
+  vec2 screenPx = vec2(vTexCoord.x, 1.0 - vTexCoord.y) * iResolution;
+  // Apply scroll offset to get world position
+  vec2 worldPx = screenPx + iOffset;
 
-  // Grid cell calculation
-  float cellWidth = 1.0 / float(NUM_COLS);
-  float cellHeight = 1.0 / float(NUM_ROWS);
+  // Grid cell from world position
+  int col = int(floor(worldPx.x / iCellSize));
+  int row = int(floor(worldPx.y / iCellSize));
 
-  int col = int(floor(uv.x * float(NUM_COLS)));
-  int row = int(floor((1.0 - uv.y) * float(NUM_ROWS)));
+  // Background for out-of-grid areas
+  if (col < 0 || col >= NUM_COLS || row < 0 || row >= NUM_ROWS) {
+    fragColor = vec4(0.1, 0.1, 0.1, 1.0);
+    return;
+  }
+
   int funcId = row * NUM_COLS + col;
 
-  // Local UV within cell (0-1)
-  vec2 cellUV = fract(vec2(uv.x * float(NUM_COLS), (1.0 - uv.y) * float(NUM_ROWS)));
+  // Cell UV (0-1 within cell)
+  vec2 cellUV = fract(worldPx / iCellSize);
 
   // Add padding
   float padding = 0.05;
@@ -536,8 +544,6 @@ void main() {
   float inPadding = step(padding, cellUV.x) * step(padding, cellUV.y)
                   * step(padding, 1.0 - cellUV.x) * step(padding, 1.0 - cellUV.y);
 
-  // Content area: use mixed RGBA
-  // Padding/border area: opaque dark color
   vec4 paddingColor = vec4(0.15, 0.15, 0.15, 1.0);
   vec4 borderColor = vec4(0.3, 0.3, 0.3, 1.0);
 
