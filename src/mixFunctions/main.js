@@ -40,10 +40,24 @@ const FUNCTION_NAMES = [
   'posterize',
   'fract repeat',
   'sine grid',
+  // Row 6: Waves + Noise
+  'square wave',
+  'triangle wave',
+  'sawtooth',
+  'pulse',
+  'worley F1',
+  'curl noise',
+  // Row 7: Noise + Polar
+  'caustics',
+  'smooth voronoi',
+  'spiral',
+  'rose curve',
+  'lissajous',
+  'polar fBM',
 ];
 
 const COLS = 6;
-const ROWS = 5;
+const ROWS = 7;
 const BASE_CELL_SIZE = 400; // px at zoom=1
 const BASE_STRIDE = 424;    // cell + gap at zoom=1
 
