@@ -44,6 +44,9 @@ const FUNCTION_NAMES = [
 
 const COLS = 6;
 const ROWS = 5;
+const CELL_SIZE = 400; // px per cell (square)
+const GAP_SIZE = 24;   // px gap between cells
+const STRIDE = CELL_SIZE + GAP_SIZE;
 
 export const main = () => {
   const canvas = document.createElement('canvas');
@@ -59,14 +62,8 @@ export const main = () => {
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-  // Square cell size: fit all functions in the initial viewport
-  const cellSize = Math.floor(Math.min(canvas.width / COLS, canvas.height / ROWS));
-
-  // Pan offset: start with grid centered in viewport
-  const offset = {
-    x: (COLS * cellSize - canvas.width) / 2,
-    y: (ROWS * cellSize - canvas.height) / 2,
-  };
+  // Pan offset (world pixels shown at screen origin)
+  const offset = { x: 0, y: 0 };
 
   // Drag state
   let isDragging = false;
@@ -91,7 +88,7 @@ export const main = () => {
     canvas.classList.remove('dragging');
   });
 
-  // Wheel scroll (horizontal + vertical)
+  // Wheel scroll
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
     offset.x += e.deltaX;
@@ -160,29 +157,35 @@ export const main = () => {
     labelsContainer.innerHTML = '';
     if (!settings.showLabels) return;
 
-    for (let row = 0; row < ROWS; row++) {
-      for (let col = 0; col < COLS; col++) {
-        const idx = row * COLS + col;
-        if (idx >= FUNCTION_NAMES.length) continue;
+    // Compute visible slot range
+    const minCol = Math.floor(offset.x / STRIDE) - 1;
+    const maxCol = Math.ceil((offset.x + canvas.width) / STRIDE);
+    const minRow = Math.floor(offset.y / STRIDE) - 1;
+    const maxRow = Math.ceil((offset.y + canvas.height) / STRIDE);
 
-        // World-to-screen: subtract the scroll offset
-        const screenX = col * cellSize - offset.x;
-        const screenY = row * cellSize - offset.y;
+    for (let row = minRow; row <= maxRow; row++) {
+      for (let col = minCol; col <= maxCol; col++) {
+        const screenX = col * STRIDE - offset.x;
+        const screenY = row * STRIDE - offset.y;
 
-        // Skip cells outside the viewport
-        if (screenX + cellSize < 0 || screenX > canvas.width) continue;
-        if (screenY + cellSize < 0 || screenY > canvas.height) continue;
+        if (screenX + CELL_SIZE < 0 || screenX > canvas.width) continue;
+        if (screenY + CELL_SIZE < 0 || screenY > canvas.height) continue;
+
+        // Wrap to function ID (infinite repeat)
+        const wrappedCol = ((col % COLS) + COLS) % COLS;
+        const wrappedRow = ((row % ROWS) + ROWS) % ROWS;
+        const funcId = wrappedRow * COLS + wrappedCol;
 
         const label = document.createElement('div');
-        label.textContent = FUNCTION_NAMES[idx];
+        label.textContent = FUNCTION_NAMES[funcId];
         label.style.cssText = `
           position: absolute;
           left: ${screenX}px;
           top: ${screenY}px;
-          width: ${cellSize}px;
-          padding: 4px 8px;
+          width: ${CELL_SIZE}px;
+          padding: 6px 12px;
           font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-          font-size: 11px;
+          font-size: 13px;
           color: rgba(255, 255, 255, 0.9);
           text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
           box-sizing: border-box;
@@ -206,7 +209,8 @@ export const main = () => {
     shader.setUniform('iTime', time);
     shader.setUniform('iResolution', [canvas.width, canvas.height]);
     shader.setUniform('iOffset', [offset.x, offset.y]);
-    shader.setUniform('iCellSize', cellSize);
+    shader.setUniform('iCellSize', CELL_SIZE);
+    shader.setUniform('iStride', STRIDE);
     shader.setUniform('iColorA', hexToRGBA(settings.colorA, settings.alphaA));
     shader.setUniform('iColorB', hexToRGBA(settings.colorB, settings.alphaB));
     shader.setUniform('iAnimate', settings.animate ? 1 : 0);
