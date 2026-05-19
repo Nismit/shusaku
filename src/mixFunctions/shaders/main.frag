@@ -427,12 +427,130 @@ float fn_sineGrid(vec2 uv, float time) {
 }
 
 // ============================================
+// Wave Functions
+// ============================================
+
+float fn_squareWave(vec2 uv) {
+  return step(0.5, fract(uv.x * 4.0));
+}
+
+float fn_triangleWave(vec2 uv) {
+  float t = fract(uv.x * 4.0);
+  return 1.0 - abs(t * 2.0 - 1.0);
+}
+
+float fn_sawtooth(vec2 uv) {
+  return fract(uv.x * 4.0);
+}
+
+// uv.y controls duty cycle: top=narrow, bottom=full
+float fn_pulse(vec2 uv) {
+  return step(1.0 - uv.y, fract(uv.x * 4.0));
+}
+
+// ============================================
+// Additional Noise
+// ============================================
+
+float fn_worleyF1(vec2 uv, float time) {
+  vec2 p = uv * 4.0;
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  float minDist = 1.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 neighbor = vec2(float(x), float(y));
+      vec2 point = hash22(i + neighbor);
+      point = 0.5 + 0.5 * sin(time * 0.5 + 6.28318 * point);
+      minDist = min(minDist, length(neighbor + point - f));
+    }
+  }
+  return clamp(minDist, 0.0, 1.0);
+}
+
+float fn_curlNoise(vec2 uv, float time) {
+  float eps = 0.01;
+  vec2 p = uv * 3.0 + vec2(time * 0.15, time * 0.1);
+  float dfdx = (valueNoise(p + vec2(eps, 0.0)) - valueNoise(p - vec2(eps, 0.0))) / (2.0 * eps);
+  float dfdy = (valueNoise(p + vec2(0.0, eps)) - valueNoise(p - vec2(0.0, eps))) / (2.0 * eps);
+  vec2 curl = vec2(-dfdy, dfdx);
+  return valueNoise(p + curl * 0.2);
+}
+
+float fn_caustics(vec2 uv, float time) {
+  vec2 p = uv * 3.5;
+  float c = 0.0;
+  for (int i = 0; i < 3; i++) {
+    float fi = float(i);
+    float scale = 1.0 + fi * 0.6;
+    vec2 shift = vec2(fi * 1.7, fi * 2.3);
+    vec2 anim = vec2(sin(time * (0.3 - fi * 0.05)), cos(time * (0.25 - fi * 0.04))) * 0.4;
+    c += worleyF2F1((p + shift + anim) * scale) / scale;
+  }
+  return clamp(c * 1.3, 0.0, 1.0);
+}
+
+float fn_smoothVoronoi(vec2 uv, float time) {
+  vec2 p = uv * 4.0;
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  float k = 8.0;
+  float wSum = 0.0;
+  float dSum = 0.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 neighbor = vec2(float(x), float(y));
+      vec2 point = hash22(i + neighbor);
+      point = 0.5 + 0.5 * sin(time * 0.5 + 6.28318 * point);
+      float d = length(neighbor + point - f);
+      float w = exp(-k * d);
+      dSum += d * w;
+      wSum += w;
+    }
+  }
+  return clamp(dSum / wSum, 0.0, 1.0);
+}
+
+// ============================================
+// Polar Coordinate Functions
+// ============================================
+
+float fn_spiral(vec2 uv, float time) {
+  vec2 p = uv - 0.5;
+  float r = length(p) * 2.0;
+  float theta = atan(p.y, p.x);
+  float bands = fract(r * 4.0 - theta / (2.0 * 3.14159265) + time * 0.3);
+  return smoothstep(0.2, 0.8, bands);
+}
+
+float fn_roseCurve(vec2 uv, float time) {
+  vec2 p = uv - 0.5;
+  float r = length(p) * 2.0;
+  float theta = atan(p.y, p.x);
+  float rose = abs(cos(3.0 * theta + time * 0.3));
+  return smoothstep(0.06, 0.0, r - rose * 0.88);
+}
+
+float fn_lissajous(vec2 uv, float time) {
+  float sx = sin(3.0 * uv.x * 6.28318 + time);
+  float sy = sin(2.0 * uv.y * 6.28318 + time * 0.7);
+  return sx * sy * 0.5 + 0.5;
+}
+
+float fn_polarFbm(vec2 uv, float time) {
+  vec2 p = uv - 0.5;
+  float r = length(p) * 2.0;
+  float theta = atan(p.y, p.x) / 3.14159265;
+  return fbm(vec2(r * 3.0, theta * 2.0) + time * 0.15, 4);
+}
+
+// ============================================
 // Grid Layout
 // ============================================
 
 #define NUM_COLS 6
-#define NUM_ROWS 5
-#define TOTAL_FUNCTIONS 30
+#define NUM_ROWS 7
+#define TOTAL_FUNCTIONS 42
 
 struct FunctionResult {
   float value;
@@ -477,6 +595,20 @@ FunctionResult getMixValue(int id, vec2 uv, float time) {
   else if (id == 27) result.value = fn_posterize(cuv);
   else if (id == 28) result.value = fn_fractRepeat(cuv);
   else if (id == 29) result.value = fn_sineGrid(cuv, time);
+  // Row 6: Waves + Noise
+  else if (id == 30) result.value = fn_squareWave(cuv);
+  else if (id == 31) result.value = fn_triangleWave(cuv);
+  else if (id == 32) result.value = fn_sawtooth(cuv);
+  else if (id == 33) result.value = fn_pulse(cuv);
+  else if (id == 34) result.value = fn_worleyF1(cuv, time);
+  else if (id == 35) result.value = fn_curlNoise(cuv, time);
+  // Row 7: Noise + Polar
+  else if (id == 36) result.value = fn_caustics(cuv, time);
+  else if (id == 37) result.value = fn_smoothVoronoi(cuv, time);
+  else if (id == 38) result.value = fn_spiral(cuv, time);
+  else if (id == 39) result.value = fn_roseCurve(cuv, time);
+  else if (id == 40) result.value = fn_lissajous(cuv, time);
+  else if (id == 41) result.value = fn_polarFbm(cuv, time);
   else result.value = 0.0;
 
   result.value = clamp(result.value, 0.0, 1.0);
