@@ -3,14 +3,11 @@ import { PointerInput } from '../libs/PointerInput.js';
 import GUI from '../libs/lil-gui.esm.min.js';
 
 import advectionFrag from './shaders/advection.frag?raw';
-import uvAdvectionFrag from './shaders/uvAdvection.frag?raw';
 import splatFrag from './shaders/splat.frag?raw';
 import divergenceFrag from './shaders/divergence.frag?raw';
 import pressureFrag from './shaders/pressure.frag?raw';
 import gradientFrag from './shaders/gradient.frag?raw';
 import blurFrag from './shaders/blur.frag?raw';
-import uvInitFrag from './shaders/uvInit.frag?raw';
-import restoreFrag from './shaders/restore.frag?raw';
 import displayFrag from './shaders/display.frag?raw';
 
 export const main = () => {
@@ -30,25 +27,24 @@ export const main = () => {
 
   const config = {
     simResolution: 512,
-    uvResolution: 512,
+    dyeResolution: 512,
     velocityDissipation: 0.5,
-    restoreSpeed: 0.8,
+    dyeDissipation: 1.5,   // how fast the ripple effect fades (higher = faster)
     pressureIterations: 20,
     splatSize: 15,
     splatForce: 50,
     checkerScale: 12,
+    displacementScale: 0.003,
+    shimmerScale: 0.02,
     velocityBlur: true,
   };
 
   const advectionShader = cgl.createShader({ fragment: advectionFrag });
-  const uvAdvectionShader = cgl.createShader({ fragment: uvAdvectionFrag });
   const splatShader = cgl.createShader({ fragment: splatFrag });
   const divergenceShader = cgl.createShader({ fragment: divergenceFrag });
   const pressureShader = cgl.createShader({ fragment: pressureFrag });
   const gradientShader = cgl.createShader({ fragment: gradientFrag });
   const blurShader = cgl.createShader({ fragment: blurFrag });
-  const uvInitShader = cgl.createShader({ fragment: uvInitFrag });
-  const restoreShader = cgl.createShader({ fragment: restoreFrag });
   const displayShader = cgl.createShader({ fragment: displayFrag });
 
   const createFBO = (w, h) => {
@@ -71,16 +67,13 @@ export const main = () => {
   };
 
   const simSize = { w: config.simResolution, h: config.simResolution };
-  const uvSize = { w: config.uvResolution, h: config.uvResolution };
+  const dyeSize = { w: config.dyeResolution, h: config.dyeResolution };
 
   const velocity = createDoubleFBO(simSize.w, simSize.h);
   const pressure = createDoubleFBO(simSize.w, simSize.h);
   const divergence = createFBO(simSize.w, simSize.h);
-  const uvField = createDoubleFBO(uvSize.w, uvSize.h);
-
-  // Initialize UV field: each pixel stores its own UV coordinate (identity mapping)
-  uvField.read.pass(uvInitShader, {});
-  uvField.write.pass(uvInitShader, {});
+  // Dye stores displacement info: rg = flow direction, b = speed (for shimmer)
+  const dye = createDoubleFBO(dyeSize.w, dyeSize.h);
 
   const pointer = new PointerInput(canvas);
 
@@ -97,22 +90,33 @@ export const main = () => {
   const splat = (x, y, dx, dy) => {
     const aspect = canvas.width / canvas.height;
     const radius = config.splatSize * 0.0002;
+    const force = config.splatForce;
 
     velocity.write.pass(splatShader, {
       uTarget: velocity.read,
       uPoint: [x, y],
-      uColor: [dx * config.splatForce, dy * config.splatForce, 0],
+      uColor: [dx * force, dy * force, 0],
       uRadius: radius,
       uAspect: aspect,
     });
     velocity.swap();
+
+    // Dye carries velocity direction (rg) and speed magnitude (b)
+    const speed = Math.sqrt(dx * dx + dy * dy);
+    dye.write.pass(splatShader, {
+      uTarget: dye.read,
+      uPoint: [x, y],
+      uColor: [dx * force, dy * force, speed * force],
+      uRadius: radius,
+      uAspect: aspect,
+    });
+    dye.swap();
   };
 
   const step = (dt) => {
     const simTexel = [1 / simSize.w, 1 / simSize.h];
-    const uvTexel = [1 / uvSize.w, 1 / uvSize.h];
+    const dyeTexel = [1 / dyeSize.w, 1 / dyeSize.h];
 
-    // Advect velocity
     velocity.write.pass(advectionShader, {
       uSource: velocity.read,
       uVelocity: velocity.read,
@@ -138,19 +142,16 @@ export const main = () => {
       velocity.swap();
     }
 
-    // Divergence
     divergence.pass(divergenceShader, {
       uVelocity: velocity.read,
       uTexelSize: simTexel,
     });
 
-    // Clear pressure
     gl.bindFramebuffer(gl.FRAMEBUFFER, pressure.read.fbo);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-    // Pressure solve (Jacobi iteration)
     for (let i = 0; i < config.pressureIterations; i++) {
       pressure.write.pass(pressureShader, {
         uPressure: pressure.read,
@@ -160,7 +161,6 @@ export const main = () => {
       pressure.swap();
     }
 
-    // Gradient subtract
     velocity.write.pass(gradientShader, {
       uPressure: pressure.read,
       uVelocity: velocity.read,
@@ -168,31 +168,26 @@ export const main = () => {
     });
     velocity.swap();
 
-    // Advect UV field using the current velocity
-    uvField.write.pass(uvAdvectionShader, {
-      uSource: uvField.read,
+    // Dye advects with the fluid and dissipates — displacement fades as ripples calm
+    dye.write.pass(advectionShader, {
+      uSource: dye.read,
       uVelocity: velocity.read,
       uDt: dt,
-      uTexelSize: uvTexel,
+      uDissipation: config.dyeDissipation,
+      uTexelSize: dyeTexel,
     });
-    uvField.swap();
-
-    // Restore UV field toward identity over time (rubber-sheet spring-back)
-    const restoreRate = 1.0 - Math.exp(-config.restoreSpeed * dt);
-    uvField.write.pass(restoreShader, {
-      uUVField: uvField.read,
-      uRestoreRate: restoreRate,
-    });
-    uvField.swap();
+    dye.swap();
   };
 
   const gui = new GUI({ title: 'Stable Fluid Texture' });
   gui.add(config, 'velocityDissipation', 0, 2).name('Velocity Fade');
-  gui.add(config, 'restoreSpeed', 0, 5).step(0.05).name('Restore Speed');
+  gui.add(config, 'dyeDissipation', 0, 5).step(0.1).name('Ripple Fade');
   gui.add(config, 'pressureIterations', 1, 50).step(1).name('Pressure Iter');
   gui.add(config, 'splatSize', 1, 30).step(1).name('Splat Size');
   gui.add(config, 'splatForce', 1, 100).name('Splat Force');
   gui.add(config, 'checkerScale', 2, 30).step(1).name('Checker Scale');
+  gui.add(config, 'displacementScale', 0, 0.015).step(0.0001).name('Displacement');
+  gui.add(config, 'shimmerScale', 0, 0.1).step(0.001).name('Shimmer');
   gui.add(config, 'velocityBlur').name('Velocity Blur');
   gui.close();
 
@@ -217,8 +212,10 @@ export const main = () => {
     step(dt);
 
     cgl.pass(displayShader, {
-      uUVField: uvField.read,
+      uDye: dye.read,
       uCheckerScale: config.checkerScale,
+      uDispScale: config.displacementScale,
+      uShimmerScale: config.shimmerScale,
     });
 
     requestAnimationFrame(render);
