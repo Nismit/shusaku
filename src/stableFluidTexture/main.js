@@ -34,8 +34,8 @@ export const main = () => {
     splatSize: 15,
     splatForce: 50,
     checkerScale: 12,
-    displacementScale: 0.003,
-    shimmerScale: 0.02,
+    displacementScale: 0.01,
+    shimmerScale: 0.0,
     chromaStrength: 0.35,
     velocityBlur: true,
   };
@@ -187,7 +187,7 @@ export const main = () => {
   gui.add(config, 'splatSize', 1, 30).step(1).name('Splat Size');
   gui.add(config, 'splatForce', 1, 100).name('Splat Force');
   gui.add(config, 'checkerScale', 2, 30).step(1).name('Checker Scale');
-  gui.add(config, 'displacementScale', 0, 0.015).step(0.0001).name('Displacement');
+  gui.add(config, 'displacementScale', 0, 0.025).step(0.0001).name('Displacement');
   gui.add(config, 'shimmerScale', 0, 0.1).step(0.001).name('Shimmer');
   gui.add(config, 'chromaStrength', 0, 1).step(0.01).name('Chroma');
   gui.add(config, 'velocityBlur').name('Velocity Blur');
