@@ -30,14 +30,12 @@ export const main = () => {
   const config = {
     simResolution: 512,
     dyeResolution: 512,
-    velocityDissipation: 0.5,
-    dyeDissipation: 0.97,
+    dyeDissipation: 0.5,
     pressureIterations: 20,
     splatSize: 15,
     splatForce: 50,
     colorful: false,
     color: '#00bcd4',
-    velocityBlur: true,
   };
 
   const hexToRgb = (hex) => {
@@ -156,29 +154,25 @@ export const main = () => {
       uSource: velocity.read,
       uVelocity: velocity.read,
       uDt: dt,
-      uDissipation: config.velocityDissipation,
+      uDissipation: 0.5,
       uTexelSize: simTexel,
     });
     velocity.swap();
 
-    // Velocity blur (separable Gaussian)
-    if (config.velocityBlur) {
-      // Horizontal pass
-      velocity.write.pass(blurShader, {
-        uTexture: velocity.read,
-        uTexelSize: simTexel,
-        uDirection: [1, 0],
-      });
-      velocity.swap();
+    // Velocity blur (separable Gaussian, always on)
+    velocity.write.pass(blurShader, {
+      uTexture: velocity.read,
+      uTexelSize: simTexel,
+      uDirection: [1, 0],
+    });
+    velocity.swap();
 
-      // Vertical pass
-      velocity.write.pass(blurShader, {
-        uTexture: velocity.read,
-        uTexelSize: simTexel,
-        uDirection: [0, 1],
-      });
-      velocity.swap();
-    }
+    velocity.write.pass(blurShader, {
+      uTexture: velocity.read,
+      uTexelSize: simTexel,
+      uDirection: [0, 1],
+    });
+    velocity.swap();
 
     // Divergence
     divergence.pass(divergenceShader, {
@@ -223,8 +217,7 @@ export const main = () => {
 
   // --- GUI ---
   const gui = new GUI({ title: 'Stable Fluid Smooth' });
-  gui.add(config, 'velocityDissipation', 0, 2).name('Velocity Fade');
-  gui.add(config, 'dyeDissipation', 0.9, 1).step(0.001).name('Dye Fade');
+  gui.add(config, 'dyeDissipation', 0, 5).step(0.1).name('Dye Fade');
   gui.add(config, 'pressureIterations', 1, 50).step(1).name('Pressure Iter');
   gui.add(config, 'splatSize', 1, 30).step(1).name('Splat Size');
   gui.add(config, 'splatForce', 1, 100).name('Splat Force');
@@ -239,7 +232,6 @@ export const main = () => {
       currentColor = hexToRgb(config.color);
     }
   });
-  gui.add(config, 'velocityBlur').name('Velocity Blur');
   gui.close();
 
   // --- Render loop ---
