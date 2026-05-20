@@ -35,8 +35,16 @@ export const main = () => {
     pressureIterations: 20,
     splatSize: 15,
     splatForce: 50,
-    colorful: true,
+    colorful: false,
+    color: '#00bcd4',
     velocityBlur: true,
+  };
+
+  const hexToRgb = (hex) => {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    return [r, g, b];
   };
 
   // --- Shaders ---
@@ -108,7 +116,7 @@ export const main = () => {
     return [(r + m), (g + m), (b + m)];
   };
 
-  let currentColor = randomColor();
+  let currentColor = hexToRgb(config.color);
   let colorTimer = 0;
 
   // --- Splat function ---
@@ -220,7 +228,17 @@ export const main = () => {
   gui.add(config, 'pressureIterations', 1, 50).step(1).name('Pressure Iter');
   gui.add(config, 'splatSize', 1, 30).step(1).name('Splat Size');
   gui.add(config, 'splatForce', 1, 100).name('Splat Force');
-  gui.add(config, 'colorful').name('Colorful');
+  const colorController = gui.addColor(config, 'color').name('Color').onChange(() => {
+    currentColor = hexToRgb(config.color);
+  });
+  gui.add(config, 'colorful').name('Colorful').onChange((value) => {
+    if (value) {
+      colorController.disable();
+    } else {
+      colorController.enable();
+      currentColor = hexToRgb(config.color);
+    }
+  });
   gui.add(config, 'velocityBlur').name('Velocity Blur');
   gui.close();
 
@@ -238,7 +256,7 @@ export const main = () => {
 
     // Color change
     colorTimer += dt;
-    if (colorTimer > 0.5 && config.colorful) {
+    if (config.colorful && colorTimer > 0.5) {
       currentColor = randomColor();
       colorTimer = 0;
     }
