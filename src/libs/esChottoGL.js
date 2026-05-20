@@ -884,6 +884,7 @@ export function chottoGL(canvas, options = {}) {
       setTexParams(opts);
 
       const image = new Image();
+      if (options.crossOrigin !== undefined) image.crossOrigin = options.crossOrigin;
       image.onload = () => {
         gl.bindTexture(GL_TEX2D, texture);
         gl.texImage2D(
