@@ -25,10 +25,12 @@ void main() {
 
     vec3 base;
     if (uUseBgImage > 0.5) {
+        // WebGL loads images with Y flipped relative to canvas coordinates
+        vec2 bgUV = vec2(vTexCoord.x, 1.0 - vTexCoord.y);
         // Sample image with chromatic aberration on each channel
-        float r = texture(uBgImage, vTexCoord + disp * (1.0 + uChromaStrength)).r;
-        float g = texture(uBgImage, vTexCoord + disp).g;
-        float b = texture(uBgImage, vTexCoord + disp * (1.0 - uChromaStrength)).b;
+        float r = texture(uBgImage, bgUV + disp * (1.0 + uChromaStrength)).r;
+        float g = texture(uBgImage, bgUV + disp).g;
+        float b = texture(uBgImage, bgUV + disp * (1.0 - uChromaStrength)).b;
         base = vec3(r, g, b);
     } else {
         // Chromatic aberration: R/G/B channels sampled at slightly different displacements.
