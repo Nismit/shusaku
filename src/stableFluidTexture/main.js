@@ -36,6 +36,7 @@ export const main = () => {
     checkerScale: 12,
     displacementScale: 0.003,
     shimmerScale: 0.02,
+    chromaStrength: 0.35,
     velocityBlur: true,
   };
 
@@ -188,6 +189,7 @@ export const main = () => {
   gui.add(config, 'checkerScale', 2, 30).step(1).name('Checker Scale');
   gui.add(config, 'displacementScale', 0, 0.015).step(0.0001).name('Displacement');
   gui.add(config, 'shimmerScale', 0, 0.1).step(0.001).name('Shimmer');
+  gui.add(config, 'chromaStrength', 0, 1).step(0.01).name('Chroma');
   gui.add(config, 'velocityBlur').name('Velocity Blur');
   gui.close();
 
@@ -216,6 +218,7 @@ export const main = () => {
       uCheckerScale: config.checkerScale,
       uDispScale: config.displacementScale,
       uShimmerScale: config.shimmerScale,
+      uChromaStrength: config.chromaStrength,
     });
 
     requestAnimationFrame(render);
