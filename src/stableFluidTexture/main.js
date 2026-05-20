@@ -83,13 +83,53 @@ export const main = () => {
 
   let bgTexture = placeholderBgTexture;
 
+  const loadingOverlay = document.createElement('div');
+  loadingOverlay.style.cssText = [
+    'position:fixed', 'inset:0', 'display:none',
+    'align-items:center', 'justify-content:center',
+    'background:rgba(0,0,0,0.55)', 'color:#fff',
+    'font-family:sans-serif', 'font-size:14px', 'letter-spacing:0.08em',
+    'z-index:100', 'pointer-events:none',
+  ].join(';');
+  loadingOverlay.textContent = 'Loading image...';
+  document.body.appendChild(loadingOverlay);
+
   const loadRandomBgImage = () => {
-    const w = Math.min(canvas.width || 1280, 1280);
-    const h = Math.min(canvas.height || 720, 720);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.min(Math.round((canvas.width || 1280) * dpr), 2560);
+    const h = Math.min(Math.round((canvas.height || 720) * dpr), 1440);
     const seed = Math.floor(Math.random() * 1000);
     const url = `https://picsum.photos/${w}/${h}?random=${seed}`;
-    const tex = cgl.loadTexture(url, { crossOrigin: 'anonymous' });
-    bgTexture = tex;
+
+    loadingOverlay.style.display = 'flex';
+
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([128, 128, 128, 255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      if (bgTexture !== placeholderBgTexture) gl.deleteTexture(bgTexture);
+      bgTexture = texture;
+      loadingOverlay.style.display = 'none';
+    };
+    image.onerror = () => {
+      console.error('Failed to load background image');
+      gl.deleteTexture(texture);
+      loadingOverlay.style.display = 'none';
+    };
+    image.src = url;
+
     config.bgMode = 1;
     gui.controllersRecursive().find(c => c.property === 'bgMode')?.updateDisplay();
   };
