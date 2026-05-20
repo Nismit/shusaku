@@ -28,8 +28,7 @@ export const main = () => {
   const config = {
     simResolution: 512,
     dyeResolution: 512,
-    velocityDissipation: 0.5,
-    dyeDissipation: 1.5,   // how fast the ripple effect fades (higher = faster)
+    dyeDissipation: 1.5,
     pressureIterations: 20,
     splatSize: 15,
     splatForce: 50,
@@ -37,7 +36,6 @@ export const main = () => {
     displacementScale: 0.01,
     shimmerScale: 0.0,
     chromaStrength: 0.35,
-    velocityBlur: true,
   };
 
   const advectionShader = cgl.createShader({ fragment: advectionFrag });
@@ -122,26 +120,25 @@ export const main = () => {
       uSource: velocity.read,
       uVelocity: velocity.read,
       uDt: dt,
-      uDissipation: config.velocityDissipation,
+      uDissipation: 0.5,
       uTexelSize: simTexel,
     });
     velocity.swap();
 
-    if (config.velocityBlur) {
-      velocity.write.pass(blurShader, {
-        uTexture: velocity.read,
-        uTexelSize: simTexel,
-        uDirection: [1, 0],
-      });
-      velocity.swap();
+    // Velocity blur (separable Gaussian, always on)
+    velocity.write.pass(blurShader, {
+      uTexture: velocity.read,
+      uTexelSize: simTexel,
+      uDirection: [1, 0],
+    });
+    velocity.swap();
 
-      velocity.write.pass(blurShader, {
-        uTexture: velocity.read,
-        uTexelSize: simTexel,
-        uDirection: [0, 1],
-      });
-      velocity.swap();
-    }
+    velocity.write.pass(blurShader, {
+      uTexture: velocity.read,
+      uTexelSize: simTexel,
+      uDirection: [0, 1],
+    });
+    velocity.swap();
 
     divergence.pass(divergenceShader, {
       uVelocity: velocity.read,
@@ -181,7 +178,6 @@ export const main = () => {
   };
 
   const gui = new GUI({ title: 'Stable Fluid Texture' });
-  gui.add(config, 'velocityDissipation', 0, 2).name('Velocity Fade');
   gui.add(config, 'dyeDissipation', 0, 5).step(0.1).name('Ripple Fade');
   gui.add(config, 'pressureIterations', 1, 50).step(1).name('Pressure Iter');
   gui.add(config, 'splatSize', 1, 30).step(1).name('Splat Size');
@@ -190,7 +186,6 @@ export const main = () => {
   gui.add(config, 'displacementScale', 0, 0.025).step(0.0001).name('Displacement');
   gui.add(config, 'shimmerScale', 0, 0.1).step(0.001).name('Shimmer');
   gui.add(config, 'chromaStrength', 0, 1).step(0.01).name('Chroma');
-  gui.add(config, 'velocityBlur').name('Velocity Blur');
   gui.close();
 
   let lastTime = performance.now();
