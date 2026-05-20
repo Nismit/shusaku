@@ -2,10 +2,12 @@
 precision highp float;
 
 uniform sampler2D uDye;
+uniform sampler2D uBgImage;
 uniform float uCheckerScale;
 uniform float uDispScale;
 uniform float uShimmerScale;
 uniform float uChromaStrength;
+uniform float uUseBgImage;
 
 in vec2 vTexCoord;
 out vec4 fragColor;
@@ -21,19 +23,28 @@ void main() {
     vec3 dye = texture(uDye, vTexCoord).rgb;
     vec2 disp = dye.rg * uDispScale;
 
-    // Chromatic aberration: R/G/B channels sampled at slightly different displacements.
-    // When disp is zero there is no split, so the effect only appears on active ripples.
-    float r = checkerVal(vTexCoord + disp * (1.0 + uChromaStrength));
-    float g = checkerVal(vTexCoord + disp);
-    float b = checkerVal(vTexCoord + disp * (1.0 - uChromaStrength));
+    vec3 base;
+    if (uUseBgImage > 0.5) {
+        // Sample image with chromatic aberration on each channel
+        float r = texture(uBgImage, vTexCoord + disp * (1.0 + uChromaStrength)).r;
+        float g = texture(uBgImage, vTexCoord + disp).g;
+        float b = texture(uBgImage, vTexCoord + disp * (1.0 - uChromaStrength)).b;
+        base = vec3(r, g, b);
+    } else {
+        // Chromatic aberration: R/G/B channels sampled at slightly different displacements.
+        // When disp is zero there is no split, so the effect only appears on active ripples.
+        float r = checkerVal(vTexCoord + disp * (1.0 + uChromaStrength));
+        float g = checkerVal(vTexCoord + disp);
+        float b = checkerVal(vTexCoord + disp * (1.0 - uChromaStrength));
 
-    vec3 colorA = vec3(0.95);
-    vec3 colorB = vec3(0.12);
-    vec3 base = vec3(
-        mix(colorA.r, colorB.r, r),
-        mix(colorA.g, colorB.g, g),
-        mix(colorA.b, colorB.b, b)
-    );
+        vec3 colorA = vec3(0.95);
+        vec3 colorB = vec3(0.12);
+        base = vec3(
+            mix(colorA.r, colorB.r, r),
+            mix(colorA.g, colorB.g, g),
+            mix(colorA.b, colorB.b, b)
+        );
+    }
 
     float shimmer = clamp(dye.b * uShimmerScale, 0.0, 0.4);
     base = mix(base, vec3(1.0), shimmer);

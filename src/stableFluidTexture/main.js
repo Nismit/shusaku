@@ -36,6 +36,7 @@ export const main = () => {
     displacementScale: 0.01,
     shimmerScale: 0.0,
     chromaStrength: 0.35,
+    bgMode: 0, // 0 = checker, 1 = image
   };
 
   const advectionShader = cgl.createShader({ fragment: advectionFrag });
@@ -73,6 +74,25 @@ export const main = () => {
   const divergence = createFBO(simSize.w, simSize.h);
   // Dye stores displacement info: rg = flow direction, b = speed (for shimmer)
   const dye = createDoubleFBO(dyeSize.w, dyeSize.h);
+
+  // Placeholder 1x1 gray texture used before a background image is loaded
+  const placeholderBgTexture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, placeholderBgTexture);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([128, 128, 128, 255]));
+  gl.bindTexture(gl.TEXTURE_2D, null);
+
+  let bgTexture = placeholderBgTexture;
+
+  const loadRandomBgImage = () => {
+    const w = Math.min(canvas.width || 1280, 1280);
+    const h = Math.min(canvas.height || 720, 720);
+    const seed = Math.floor(Math.random() * 1000);
+    const url = `https://picsum.photos/${w}/${h}?random=${seed}`;
+    const tex = cgl.loadTexture(url, { crossOrigin: 'anonymous' });
+    bgTexture = tex;
+    config.bgMode = 1;
+    gui.controllersRecursive().find(c => c.property === 'bgMode')?.updateDisplay();
+  };
 
   const pointer = new PointerInput(canvas);
 
@@ -186,6 +206,12 @@ export const main = () => {
   gui.add(config, 'displacementScale', 0, 0.025).step(0.0001).name('Displacement');
   gui.add(config, 'shimmerScale', 0, 0.1).step(0.001).name('Shimmer');
   gui.add(config, 'chromaStrength', 0, 1).step(0.01).name('Chroma');
+
+  const bgFolder = gui.addFolder('Background');
+  bgFolder.add(config, 'bgMode', { Checker: 0, Image: 1 }).name('Mode');
+  bgFolder.add({ loadRandom: loadRandomBgImage }, 'loadRandom').name('Load Random Image');
+  bgFolder.open();
+
   gui.close();
 
   let lastTime = performance.now();
@@ -210,10 +236,12 @@ export const main = () => {
 
     cgl.pass(displayShader, {
       uDye: dye.read,
+      uBgImage: bgTexture,
       uCheckerScale: config.checkerScale,
       uDispScale: config.displacementScale,
       uShimmerScale: config.shimmerScale,
       uChromaStrength: config.chromaStrength,
+      uUseBgImage: config.bgMode,
     });
 
     requestAnimationFrame(render);
