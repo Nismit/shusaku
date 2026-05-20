@@ -28,7 +28,7 @@ export const main = () => {
   const config = {
     simResolution: 512,
     dyeResolution: 512,
-    dyeDissipation: 1.5,
+    dyeDissipation: 3.5,
     pressureIterations: 20,
     splatSize: 15,
     splatForce: 50,
