@@ -58,8 +58,9 @@ const FUNCTION_NAMES = [
 
 const COLS = 6;
 const ROWS = 7;
-const BASE_CELL_SIZE = 400; // px at zoom=1
-const BASE_STRIDE = 424;    // cell + gap at zoom=1
+const BASE_CELL_SIZE = 400;
+const BASE_GAP = 24;
+const MAX_GAP = 60; // ~2.5x base, subtle expansion
 
 export const main = () => {
   const canvas = document.createElement('canvas');
@@ -85,18 +86,35 @@ export const main = () => {
     zoom: 0.45,
   };
 
-  const getCellSize = () => Math.round(BASE_CELL_SIZE * settings.zoom);
-  const getStride   = () => Math.round(BASE_STRIDE   * settings.zoom);
+  // Gap animation state (0 = normal, 1 = expanded)
+  let gapAnimT = 0.0;
+  let isPressed = false;
 
-  // Pan offset (world pixels at screen origin)
+  const getCellSize = () => Math.round(BASE_CELL_SIZE * settings.zoom);
+  const getCurrentGap = () => (BASE_GAP + (MAX_GAP - BASE_GAP) * gapAnimT) * settings.zoom;
+  const getStride = () => getCellSize() + getCurrentGap();
+
+  // Pan offset (world pixels at screen top-left)
   const offset = { x: 0, y: 0 };
 
-  // Drag state
+  // Keep screen center fixed when stride changes (zoom or gap animation)
+  let lastStride = getStride();
+  function adjustOffset(oldStride, newStride) {
+    if (Math.abs(newStride - oldStride) < 0.001) return;
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    offset.x = (cx + offset.x) / oldStride * newStride - cx;
+    offset.y = (cy + offset.y) / oldStride * newStride - cy;
+  }
+
+  // ---- Input handling ----
+
   let isDragging = false;
   let dragLast = { x: 0, y: 0 };
 
   canvas.addEventListener('mousedown', (e) => {
     isDragging = true;
+    isPressed = true;
     dragLast = { x: e.clientX, y: e.clientY };
     canvas.classList.add('dragging');
   });
@@ -106,60 +124,63 @@ export const main = () => {
     offset.x -= e.clientX - dragLast.x;
     offset.y -= e.clientY - dragLast.y;
     dragLast = { x: e.clientX, y: e.clientY };
-    updateLabels();
   });
 
   window.addEventListener('mouseup', () => {
     isDragging = false;
+    isPressed = false;
     canvas.classList.remove('dragging');
   });
 
-  // Wheel scroll
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
     offset.x += e.deltaX;
     offset.y += e.deltaY;
-    updateLabels();
   }, { passive: false });
 
-  // Touch panning
   let lastTouch = null;
   canvas.addEventListener('touchstart', (e) => {
+    isPressed = true;
     lastTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   }, { passive: true });
 
   canvas.addEventListener('touchmove', (e) => {
     e.preventDefault();
-    const dx = e.touches[0].clientX - lastTouch.x;
-    const dy = e.touches[0].clientY - lastTouch.y;
-    offset.x -= dx;
-    offset.y -= dy;
+    offset.x -= e.touches[0].clientX - lastTouch.x;
+    offset.y -= e.touches[0].clientY - lastTouch.y;
     lastTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    updateLabels();
   }, { passive: false });
 
-  canvas.addEventListener('touchend', () => { lastTouch = null; });
+  canvas.addEventListener('touchend', () => {
+    isPressed = false;
+    lastTouch = null;
+  });
 
-  // Labels overlay
+  // ---- Labels overlay ----
+
   const labelsContainer = document.createElement('div');
   labelsContainer.id = 'labels';
   labelsContainer.style.cssText = `
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
     pointer-events: none;
     z-index: 10;
   `;
   document.body.appendChild(labelsContainer);
 
+  // Dirty-check to avoid unnecessary DOM rebuilds
+  let prevLabelKey = '';
   function updateLabels() {
+    const stride = getStride();
+    const key = `${stride.toFixed(2)},${offset.x.toFixed(2)},${offset.y.toFixed(2)},${settings.showLabels}`;
+    if (key === prevLabelKey) return;
+    prevLabelKey = key;
+
     labelsContainer.innerHTML = '';
     if (!settings.showLabels) return;
 
     const cellSize = getCellSize();
-    const stride   = getStride();
     const fontSize = Math.max(9, Math.round(13 * settings.zoom));
 
     const minCol = Math.floor(offset.x / stride) - 1;
@@ -198,34 +219,42 @@ export const main = () => {
     }
   }
 
-  // GUI
+  // ---- GUI ----
+
   const gui = new GUI({ title: 'Mix Functions' });
   gui.addColor(settings, 'colorA').name('Color A');
   gui.add(settings, 'alphaA', 0, 1, 0.01).name('Alpha A');
   gui.addColor(settings, 'colorB').name('Color B');
   gui.add(settings, 'alphaB', 0, 1, 0.01).name('Alpha B');
   gui.add(settings, 'animate').name('Animate');
-  gui.add(settings, 'showLabels').name('Show Labels').onChange(updateLabels);
-
-  // Zoom: scale toward screen center
-  let prevStride = getStride();
+  gui.add(settings, 'showLabels').name('Show Labels').onChange(() => {
+    prevLabelKey = ''; // force rebuild
+  });
   gui.add(settings, 'zoom', 0.1, 2.0, 0.05).name('Zoom').onChange(() => {
     const newStride = getStride();
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
-    offset.x = (cx + offset.x) / prevStride * newStride - cx;
-    offset.y = (cy + offset.y) / prevStride * newStride - cy;
-    prevStride = newStride;
-    updateLabels();
+    adjustOffset(lastStride, newStride);
+    lastStride = newStride;
+    prevLabelKey = '';
   });
 
-  updateLabels();
+  window.addEventListener('resize', () => { prevLabelKey = ''; });
 
-  window.addEventListener('resize', updateLabels);
+  // ---- Render loop ----
 
-  // Render loop
   const render = () => {
     const time = timer.getElapsedTime();
+
+    // Animate gap: faster to expand, slightly slower to contract
+    const target = isPressed ? 1.0 : 0.0;
+    gapAnimT += (target - gapAnimT) * (isPressed ? 0.1 : 0.07);
+
+    // Adjust offset to keep screen center fixed during gap animation
+    const newStride = getStride();
+    adjustOffset(lastStride, newStride);
+    lastStride = newStride;
+
+    // Update labels (dirty-checked inside)
+    updateLabels();
 
     chotto.clear(0.1, 0.1, 0.1, 1.0);
 
@@ -244,6 +273,7 @@ export const main = () => {
     requestAnimationFrame(render);
   };
 
+  updateLabels();
   render();
   timer.start();
 };
