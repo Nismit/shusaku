@@ -202,13 +202,15 @@ export const main = () => {
   gui.add(config, 'pressureIterations', 1, 50).step(1).name('Pressure Iter');
   gui.add(config, 'splatSize', 1, 30).step(1).name('Splat Size');
   gui.add(config, 'splatForce', 1, 100).name('Splat Force');
-  gui.add(config, 'checkerScale', 2, 30).step(1).name('Checker Scale');
   gui.add(config, 'displacementScale', 0, 0.025).step(0.0001).name('Displacement');
   gui.add(config, 'shimmerScale', 0, 0.1).step(0.001).name('Shimmer');
   gui.add(config, 'chromaStrength', 0, 1).step(0.01).name('Chroma');
 
   const bgFolder = gui.addFolder('Background');
-  bgFolder.add(config, 'bgMode', { Checker: 0, Image: 1 }).name('Mode');
+  bgFolder.add(config, 'bgMode', { Checker: 0, Image: 1 }).name('Mode').onChange(v => {
+    if (v === 1 && bgTexture === placeholderBgTexture) loadRandomBgImage();
+  });
+  bgFolder.add(config, 'checkerScale', 2, 30).step(1).name('Checker Scale');
   bgFolder.add({ loadRandom: loadRandomBgImage }, 'loadRandom').name('Load Random Image');
   bgFolder.open();
 
