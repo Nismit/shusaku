@@ -9,10 +9,10 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'src/index.html'),
-        stableFluidSmooth: resolve(__dirname, 'src/stableFluidSmooth/index.html'),
+        stableFluid: resolve(__dirname, 'src/stableFluid/index.html'),
+        fluidGallery: resolve(__dirname, 'src/fluidGallery/index.html'),
         tunnelRaymarching: resolve(__dirname, 'src/tunnelRaymarching/index.html'),
         mixFunctions: resolve(__dirname, 'src/mixFunctions/index.html'),
-        stableFluidTexture: resolve(__dirname, 'src/stableFluidTexture/index.html'),
       },
     },
   },
