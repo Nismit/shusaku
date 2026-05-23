@@ -34,7 +34,7 @@ export const main = () => {
     pressureIterations: 20,
     splatSize: 15,
     splatForce: 50,
-    colorful: false,
+    colorful: true,
     color: '#00bcd4',
   };
 
@@ -232,6 +232,7 @@ export const main = () => {
       currentColor = hexToRgb(config.color);
     }
   });
+  colorController.disable();
   gui.close();
 
   // --- Render loop ---
