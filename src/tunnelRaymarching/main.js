@@ -81,8 +81,8 @@ export const main = () => {
   gui.add(params, 'style', {
     'Wireframe': 0,
     'Neon': 1,
-    'Tech': 2,
-    'Organic': 3,
+    'Truchet': 2,
+    'Hex': 3,
     'Warp': 4,
   }).name('Style');
 

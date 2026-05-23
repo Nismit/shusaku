@@ -133,77 +133,108 @@ vec3 styleNeon(vec3 sp, vec3 sn, vec3 rd, float t) {
   return col * fog;
 }
 
-// Style 2: Tech Panels
-vec3 styleTech(vec3 sp, vec3 sn, vec3 rd, float t) {
+// Style 2: Truchet Pattern (Black & White)
+vec3 styleTruchet(vec3 sp, vec3 sn, vec3 rd, float t) {
   vec2 localPos = sp.xy - path(sp.z);
   float angle = atan(localPos.y, localPos.x);
 
-  // Panel grid
-  vec2 panelUV = vec2(angle / TAU * 12.0, sp.z * 0.8);
-  vec2 panelID = floor(panelUV);
-  vec2 panelF = fract(panelUV);
+  // UV for truchet grid
+  vec2 uv = vec2(angle / TAU * 10.0, sp.z * 0.8);
+  vec2 cellID = mod(floor(uv), 1000.0);  // Prevent float precision loss
+  vec2 cellF = fract(uv);
 
-  // Panel edges
-  float edge = min(
-    min(smoothstep(0.0, 0.05, panelF.x), smoothstep(1.0, 0.95, panelF.x)),
-    min(smoothstep(0.0, 0.05, panelF.y), smoothstep(1.0, 0.95, panelF.y))
-  );
+  // Random rotation per cell (0 or 1)
+  float rot = step(0.5, hash2(cellID));
 
-  // Random panel activation
-  float panelRand = hash2(panelID);
-  float pulse = sin(iTime * 2.0 + panelRand * TAU) * 0.5 + 0.5;
-  float lit = step(0.6, panelRand) * pulse;
+  // Flip UV based on rotation
+  if (rot > 0.5) {
+    cellF = vec2(1.0 - cellF.x, cellF.y);
+  }
+
+  // Distance to quarter circles (corners)
+  float d1 = length(cellF) - 0.5;
+  float d2 = length(cellF - vec2(1.0, 1.0)) - 0.5;
+
+  // Truchet curve
+  float curve = min(abs(d1), abs(d2));
+  float lineWidth = 0.08;
+  float pattern = smoothstep(lineWidth, lineWidth * 0.5, curve);
 
   // Depth fog
   float depth = t / 50.0;
   float fog = exp(-depth * depth * 0.6);
 
-  // Colors
-  vec3 panelColor = vec3(0.0, 0.6, 0.8);
-  vec3 litColor = vec3(0.0, 1.0, 0.8);
-  vec3 edgeColor = vec3(0.0, 0.3, 0.4);
+  // Black and white
+  vec3 col = vec3(pattern);
 
-  // Lighting
-  float diff = max(dot(sn, -rd), 0.0) * 0.5 + 0.5;
-
-  vec3 col = mix(edgeColor, panelColor, edge) * diff;
-  col += litColor * lit * edge * 0.5;
+  // Subtle lighting for depth
+  float diff = max(dot(sn, -rd), 0.0) * 0.3 + 0.7;
+  col *= diff;
 
   return col * fog;
 }
 
-// Style 3: Organic Cave
-vec3 styleOrganic(vec3 sp, vec3 sn, vec3 rd, float t) {
+// Style 3: Hex Tiling
+vec3 styleHexTiling(vec3 sp, vec3 sn, vec3 rd, float t) {
   vec2 localPos = sp.xy - path(sp.z);
   float angle = atan(localPos.y, localPos.x);
 
-  // Organic texture using noise
-  vec2 texUV = vec2(angle * 2.0, sp.z * 0.5);
-  float n1 = noise(texUV * 4.0 + iTime * 0.1);
-  float n2 = noise(texUV * 8.0 - iTime * 0.15);
-  float n3 = noise(texUV * 16.0);
+  // UV for hex grid
+  vec2 uv = vec2(angle / TAU * 8.0, sp.z * 0.6);
 
-  float organic = n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
+  // Hex grid constants
+  const vec2 s = vec2(1.0, 1.732050808);  // sqrt(3)
+  const vec2 h = s * 0.5;
 
-  // Depth fog with warm tint
-  float depth = t / 40.0;
-  float fog = exp(-depth * depth * 0.4);
+  // Two offset grids
+  vec2 a = mod(uv, s) - h;
+  vec2 b = mod(uv - h, s) - h;
 
-  // Warm cave colors
-  vec3 col1 = vec3(0.4, 0.2, 0.1);   // Brown
-  vec3 col2 = vec3(0.6, 0.35, 0.15); // Orange-brown
-  vec3 col3 = vec3(0.15, 0.08, 0.05); // Dark
+  // Pick closer hex center
+  vec2 gv = dot(a, a) < dot(b, b) ? a : b;
+  vec2 hexID = uv - gv;
+
+  // Distance to hex edge
+  vec2 hv = abs(gv);
+  float hexDist = max(hv.x * 0.5 + hv.y * 0.866025, hv.x);
+
+  // Stable cell ID (mod to prevent float precision loss at large values)
+  vec2 cellID = mod(floor(hexID * 100.0 + 0.5), 1000.0);
+  float cellRand = hash2(cellID);
+  float cellRand2 = hash2(cellID + vec2(17.0, 31.0));
+
+  // Cell pulsing - select ~20% of cells to pulse
+  float isPulsing = step(0.8, cellRand);
+  float pulsePhase = cellRand2 * TAU;
+  float pulse = sin(iTime * 1.5 + pulsePhase) * 0.5 + 0.5;
+  float cellBrightness = 1.0 + isPulsing * pulse * 0.8;
+
+  // Hex edge
+  float edge = smoothstep(0.5, 0.42, hexDist);
+
+  // Depth fog
+  float depth = t / 50.0;
+  float fog = exp(-depth * depth * 0.5);
+
+  // Brighter cool color palette
+  vec3 baseColor = vec3(0.08, 0.12, 0.18);  // Dark blue
+  vec3 cellColor = mix(
+    vec3(0.25, 0.4, 0.55),   // Sky blue
+    vec3(0.35, 0.5, 0.6),    // Light blue
+    cellRand2
+  );
+  vec3 pulseColor = vec3(0.5, 0.75, 0.9);  // Bright cyan for pulsing cells
 
   // Lighting
-  float diff = max(dot(sn, -rd), 0.0);
-  float rim = pow(1.0 - abs(dot(sn, rd)), 2.0);
+  float diff = max(dot(sn, -rd), 0.0) * 0.3 + 0.7;
 
-  vec3 col = mix(col3, mix(col1, col2, organic), diff * 0.7 + 0.3);
-  col += col2 * rim * 0.2;
+  // Compose color - pulsing cells get brighter color
+  vec3 finalCellColor = mix(cellColor, pulseColor, isPulsing * pulse);
+  vec3 col = mix(baseColor, finalCellColor * cellBrightness, edge) * diff;
 
-  // Subtle bioluminescence
-  float glow = smoothstep(0.7, 0.9, organic) * sin(iTime + sp.z * 0.5) * 0.5 + 0.5;
-  col += vec3(0.1, 0.4, 0.3) * glow * 0.15;
+  // Edge highlight
+  float edgeLine = smoothstep(0.46, 0.48, hexDist) * smoothstep(0.5, 0.48, hexDist);
+  col += vec3(0.4, 0.6, 0.8) * edgeLine * 0.4;
 
   return col * fog;
 }
@@ -228,8 +259,9 @@ vec3 styleWarp(vec3 sp, vec3 sn, vec3 rd, float t) {
 
   // Star field
   vec2 starUV = vec2(angle * 20.0, sp.z * 2.0);
-  float star = step(0.995, hash2(floor(starUV)));
-  float twinkle = 0.5 + 0.5 * sin(iTime * 8.0 + hash2(floor(starUV)) * 100.0);
+  vec2 starID = mod(floor(starUV), 1000.0);  // Prevent float precision loss
+  float star = step(0.995, hash2(starID));
+  float twinkle = 0.5 + 0.5 * sin(iTime * 8.0 + hash2(starID) * 100.0);
 
   // Colors
   vec3 col = vec3(0.0, 0.02, 0.05);  // Deep space blue
@@ -289,9 +321,9 @@ void main() {
     } else if (iStyle == 1) {
       col = styleNeon(sp, sn, rd, t);
     } else if (iStyle == 2) {
-      col = styleTech(sp, sn, rd, t);
+      col = styleTruchet(sp, sn, rd, t);
     } else if (iStyle == 3) {
-      col = styleOrganic(sp, sn, rd, t);
+      col = styleHexTiling(sp, sn, rd, t);
     } else {
       col = styleWarp(sp, sn, rd, t);
     }
@@ -304,9 +336,9 @@ void main() {
     } else if (iStyle == 1) {
       col = vec3(0.05, 0.0, 0.08) * fadeFog;
     } else if (iStyle == 2) {
-      col = vec3(0.0, 0.03, 0.05) * fadeFog;
+      col = vec3(0.02, 0.02, 0.02) * fadeFog;  // Dark gray for Truchet
     } else if (iStyle == 3) {
-      col = vec3(0.08, 0.04, 0.02) * fadeFog;
+      col = vec3(0.04, 0.08, 0.12) * fadeFog;  // Dark blue for Hex
     } else {
       col = vec3(0.0, 0.01, 0.03) * fadeFog;
     }
