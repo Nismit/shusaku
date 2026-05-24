@@ -57,16 +57,10 @@ const SimplexNoise = (() => {
   };
 })();
 
-// Curated free stock videos from Mixkit CDN
+// CC0 sample videos from CORS-enabled CDNs (Mozilla & Google)
 const VIDEO_URLS = [
-  'https://assets.mixkit.co/videos/preview/mixkit-waves-coming-to-the-beach-5016-large.mp4',
-  'https://assets.mixkit.co/videos/preview/mixkit-aerial-view-of-a-green-forest-16-large.mp4',
-  'https://assets.mixkit.co/videos/preview/mixkit-clouds-and-sky-back-to-earth-46-large.mp4',
-  'https://assets.mixkit.co/videos/preview/mixkit-forest-stream-in-the-sunlight-529-large.mp4',
-  'https://assets.mixkit.co/videos/preview/mixkit-aerial-view-of-a-lake-in-a-forest-34908-large.mp4',
-  'https://assets.mixkit.co/videos/preview/mixkit-waterfall-in-forest-2213-large.mp4',
-  'https://assets.mixkit.co/videos/preview/mixkit-starry-night-sky-loop-394-large.mp4',
-  'https://assets.mixkit.co/videos/preview/mixkit-landscape-with-beautiful-sunset-1401-large.mp4',
+  'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+  'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
 ];
 
 export const main = () => {
