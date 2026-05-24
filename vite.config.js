@@ -11,6 +11,7 @@ export default defineConfig({
         main: resolve(__dirname, 'src/index.html'),
         stableFluid: resolve(__dirname, 'src/stableFluid/index.html'),
         fluidGallery: resolve(__dirname, 'src/fluidGallery/index.html'),
+        fluidGalleryVideo: resolve(__dirname, 'src/fluidGalleryVideo/index.html'),
         tunnelRaymarching: resolve(__dirname, 'src/tunnelRaymarching/index.html'),
         mixFunctions: resolve(__dirname, 'src/mixFunctions/index.html'),
       },
