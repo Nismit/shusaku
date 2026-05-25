@@ -57,11 +57,14 @@ const SimplexNoise = (() => {
   };
 })();
 
-// CC0 sample videos from CORS-enabled CDNs (Mozilla & Google)
-const VIDEO_URLS = [
-  'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
-  'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
-];
+// Local video files - resolution selected based on screen size
+const VIDEO_BASE_NAMES = ['video1', 'video2', 'video3', 'video4'];
+
+const getVideoUrls = () => {
+  const is4K = window.innerWidth > 1920 || window.innerHeight > 1080;
+  const suffix = is4K ? '-4k.mp4' : '-1080p.mp4';
+  return VIDEO_BASE_NAMES.map(name => `/videos/${name}${suffix}`);
+};
 
 export const main = () => {
   const canvas = document.createElement('canvas');
@@ -149,9 +152,10 @@ export const main = () => {
 
   // Shuffled video URL queue — refills when empty
   let videoQueue = [];
+  let videoUrls = getVideoUrls();
   const getNextVideoUrl = () => {
     if (!videoQueue.length) {
-      videoQueue = [...VIDEO_URLS].sort(() => Math.random() - 0.5);
+      videoQueue = [...videoUrls].sort(() => Math.random() - 0.5);
     }
     return videoQueue.pop();
   };
