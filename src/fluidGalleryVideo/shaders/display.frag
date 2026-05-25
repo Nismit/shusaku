@@ -6,8 +6,8 @@ uniform sampler2D uBgImage;
 uniform sampler2D uBgImageNext;
 uniform float uFadeProgress;
 uniform float uDispScale;
-uniform float uShimmerScale;
 uniform float uChromaStrength;
+uniform float uOverlayOpacity;
 
 in vec2 vTexCoord;
 out vec4 fragColor;
@@ -30,8 +30,8 @@ void main() {
 
     vec3 base = mix(colorCurrent, colorNext, uFadeProgress);
 
-    float shimmer = clamp(dye.b * uShimmerScale, 0.0, 0.4);
-    base = mix(base, vec3(1.0), shimmer);
+    // Dark overlay
+    base = mix(base, vec3(0.0), uOverlayOpacity);
 
     fragColor = vec4(base, 1.0);
 }
