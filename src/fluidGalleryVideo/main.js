@@ -9,6 +9,7 @@ import pressureFrag from './shaders/pressure.frag?raw';
 import gradientFrag from './shaders/gradient.frag?raw';
 import blurFrag from './shaders/blur.frag?raw';
 import displayFrag from './shaders/display.frag?raw';
+import msdfTextFrag from './shaders/msdfText.frag?raw';
 
 // Simplex noise for smooth auto cursor movement
 const SimplexNoise = (() => {
@@ -84,18 +85,20 @@ export const main = () => {
   const config = {
     simResolution: 512,
     dyeResolution: 512,
-    dyeDissipation: 2.3,
+    dyeDissipation: 1.8,
     pressureIterations: 20,
     splatSize: 25,
-    splatForce: 50,
-    displacementScale: 0.016,
-    shimmerScale: 0.0,
+    splatForce: 70,
+    displacementScale: 0.025,
     chromaStrength: 0.35,
-    autoSpeed: 0.3,
-    autoScale: 0.4,
+    autoSpeed: 0.35,
+    autoScale: 0.5,
     autoNoiseScale: 0.8,
     switchInterval: 15,
     fadeDuration: 3,
+    overlayOpacity: 0.5,
+    fontSize: 48,
+    textPadding: 40,
   };
 
   const easeInOutCubic = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -107,6 +110,7 @@ export const main = () => {
   const gradientShader = cgl.createShader({ fragment: gradientFrag });
   const blurShader = cgl.createShader({ fragment: blurFrag });
   const displayShader = cgl.createShader({ fragment: displayFrag });
+  const msdfTextShader = cgl.createShader({ fragment: msdfTextFrag });
 
   const createFBO = (w, h) => {
     return cgl.createFramebuffer(w, h, null, {
@@ -316,6 +320,81 @@ export const main = () => {
 
   loadInitialVideo();
 
+  // Font atlas loading
+  const fontState = {
+    atlas: null,
+    glyphs: new Map(),
+    atlasSize: [220, 220],
+    ready: false,
+  };
+
+  const loadFontAtlas = async () => {
+    try {
+      const [imgResponse, jsonResponse] = await Promise.all([
+        fetch('/fonts/inter-atlas.png'),
+        fetch('/fonts/inter-atlas.json'),
+      ]);
+
+      const imgBlob = await imgResponse.blob();
+      const imgBitmap = await createImageBitmap(imgBlob);
+      const fontData = await jsonResponse.json();
+
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imgBitmap);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+
+      fontState.atlas = texture;
+      fontState.atlasSize = [fontData.atlas.width, fontData.atlas.height];
+
+      for (const glyph of fontData.glyphs) {
+        fontState.glyphs.set(String.fromCharCode(glyph.unicode), glyph);
+      }
+
+      fontState.ready = true;
+    } catch (e) {
+      console.error('Failed to load font atlas:', e);
+    }
+  };
+
+  loadFontAtlas();
+
+  const getTimeString = () => {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    const s = String(now.getSeconds()).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  };
+
+  const prepareTextGlyphs = (text, x, y, fontSize) => {
+    const glyphBounds = [];
+    const glyphPlane = [];
+    const glyphPos = [];
+    let cursorX = x;
+
+    for (const char of text) {
+      const glyph = fontState.glyphs.get(char);
+      if (!glyph) continue;
+
+      if (glyph.atlasBounds && glyph.planeBounds) {
+        const ab = glyph.atlasBounds;
+        const pb = glyph.planeBounds;
+        glyphBounds.push([ab.left, ab.bottom, ab.right, ab.top]);
+        glyphPlane.push([pb.left, pb.bottom, pb.right, pb.top]);
+        glyphPos.push([cursorX, y]);
+      }
+
+      cursorX += glyph.advance * fontSize;
+    }
+
+    return { glyphBounds, glyphPlane, glyphPos };
+  };
+
   const pointer = new PointerInput(canvas);
 
   const smoothedVelocity = { x: 0, y: 0 };
@@ -447,7 +526,6 @@ export const main = () => {
   gui.add(config, 'splatSize', 1, 30).step(1).name('Splat Size');
   gui.add(config, 'splatForce', 1, 100).name('Splat Force');
   gui.add(config, 'displacementScale', 0, 0.025).step(0.0001).name('Displacement');
-  gui.add(config, 'shimmerScale', 0, 0.1).step(0.001).name('Shimmer');
   gui.add(config, 'chromaStrength', 0, 1).step(0.01).name('Chroma');
 
   const autoFolder = gui.addFolder('Auto Cursor');
@@ -461,6 +539,12 @@ export const main = () => {
   bgFolder.add(config, 'fadeDuration', 0.5, 8).step(0.5).name('Fade Duration (s)');
   bgFolder.add({ loadRandom: loadRandomVideos }, 'loadRandom').name('Load Random Videos');
   bgFolder.open();
+
+  const screenSaverFolder = gui.addFolder('Screensaver');
+  screenSaverFolder.add(config, 'overlayOpacity', 0, 0.8).step(0.05).name('Overlay Opacity');
+  screenSaverFolder.add(config, 'fontSize', 24, 120).step(4).name('Font Size');
+  screenSaverFolder.add(config, 'textPadding', 20, 100).step(5).name('Text Padding');
+  screenSaverFolder.open();
 
   gui.close();
 
@@ -505,9 +589,47 @@ export const main = () => {
       uBgImageNext: videoState.next.texture,
       uFadeProgress: easeInOutCubic(videoState.fadeProgress),
       uDispScale: config.displacementScale,
-      uShimmerScale: config.shimmerScale,
       uChromaStrength: config.chromaStrength,
+      uOverlayOpacity: config.overlayOpacity,
     });
+
+    // Render time text
+    if (fontState.ready) {
+      const timeStr = getTimeString();
+      const fontSize = config.fontSize;
+      const padding = config.textPadding;
+      const textX = padding;
+      const textY = canvas.height - padding;
+
+      const { glyphBounds, glyphPlane, glyphPos } = prepareTextGlyphs(timeStr, textX, textY, fontSize);
+
+      if (glyphBounds.length > 0) {
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+        const flatBounds = glyphBounds.flat();
+        const flatPlane = glyphPlane.flat();
+        const flatPos = glyphPos.flat();
+
+        while (flatBounds.length < 64) flatBounds.push(0);
+        while (flatPlane.length < 64) flatPlane.push(0);
+        while (flatPos.length < 32) flatPos.push(0);
+
+        cgl.pass(msdfTextShader, {
+          uAtlas: fontState.atlas,
+          uGlyphBounds: flatBounds,
+          uGlyphPlane: flatPlane,
+          uGlyphPos: flatPos,
+          uGlyphCount: glyphBounds.length,
+          uResolution: [canvas.width, canvas.height],
+          uFontSize: fontSize,
+          uColor: [1, 1, 1, 0.9],
+          uAtlasSize: fontState.atlasSize,
+        });
+
+        gl.disable(gl.BLEND);
+      }
+    }
 
     requestAnimationFrame(render);
   };
