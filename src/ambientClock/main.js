@@ -185,7 +185,8 @@ export const main = () => {
 
     el.addEventListener('canplay', () => {
       el.play().catch(() => {});
-      resolve({ el, texture });
+      const aspect = el.videoWidth > 0 ? el.videoWidth / el.videoHeight : 16 / 9;
+      resolve({ el, texture, aspect });
     }, { once: true });
 
     el.addEventListener('error', () => {
@@ -216,8 +217,8 @@ export const main = () => {
 
   // Video fade state (mirrors bgState in image version)
   const videoState = {
-    current: { el: null, texture: placeholderTexture },
-    next:    { el: null, texture: placeholderTexture },
+    current: { el: null, texture: placeholderTexture, aspect: 16 / 9 },
+    next:    { el: null, texture: placeholderTexture, aspect: 16 / 9 },
     preloading: null,
     fadeProgress: 0,
     isFading: false,
@@ -591,6 +592,9 @@ export const main = () => {
       uDispScale: config.displacementScale,
       uChromaStrength: config.chromaStrength,
       uOverlayOpacity: config.overlayOpacity,
+      uVideoAspect: videoState.current.aspect ?? 16 / 9,
+      uVideoAspectNext: videoState.next.aspect ?? 16 / 9,
+      uCanvasAspect: canvas.width / canvas.height,
     });
 
     // Render time text
