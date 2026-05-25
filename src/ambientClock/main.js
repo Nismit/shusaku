@@ -520,7 +520,7 @@ export const main = () => {
     dye.swap();
   };
 
-  const gui = new GUI({ title: 'Fluid Gallery Video' });
+  const gui = new GUI({ title: 'Ambient Clock' });
   gui.add(config, 'dyeDissipation', 0, 5).step(0.1).name('Ripple Fade');
   gui.add(config, 'pressureIterations', 1, 50).step(1).name('Pressure Iter');
   gui.add(config, 'splatSize', 1, 30).step(1).name('Splat Size');
