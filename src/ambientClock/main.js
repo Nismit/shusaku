@@ -97,8 +97,10 @@ export const main = () => {
     switchInterval: 15,
     fadeDuration: 3,
     overlayOpacity: 0.5,
-    fontSize: 48,
+    fontSize: 180,
     textPadding: 40,
+    showSeconds: true,
+    verticalLayout: false,
   };
 
   const easeInOutCubic = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -364,12 +366,26 @@ export const main = () => {
 
   loadFontAtlas();
 
-  const getTimeString = () => {
+  const getTimeComponents = () => {
     const now = new Date();
     const h = String(now.getHours()).padStart(2, '0');
     const m = String(now.getMinutes()).padStart(2, '0');
     const s = String(now.getSeconds()).padStart(2, '0');
-    return `${h}:${m}:${s}`;
+    return { h, m, s };
+  };
+
+  const getTimeString = () => {
+    const { h, m, s } = getTimeComponents();
+    return config.showSeconds ? `${h}:${m}:${s}` : `${h}:${m}`;
+  };
+
+  const measureTextWidth = (text, fontSize) => {
+    let width = 0;
+    for (const char of text) {
+      const glyph = fontState.glyphs.get(char);
+      if (glyph) width += glyph.advance * fontSize;
+    }
+    return width;
   };
 
   const prepareTextGlyphs = (text, x, y, fontSize) => {
@@ -543,8 +559,9 @@ export const main = () => {
 
   const screenSaverFolder = gui.addFolder('Screensaver');
   screenSaverFolder.add(config, 'overlayOpacity', 0, 0.8).step(0.05).name('Overlay Opacity');
-  screenSaverFolder.add(config, 'fontSize', 24, 120).step(4).name('Font Size');
-  screenSaverFolder.add(config, 'textPadding', 20, 100).step(5).name('Text Padding');
+  screenSaverFolder.add(config, 'fontSize', 24, 300).step(4).name('Font Size');
+  screenSaverFolder.add(config, 'showSeconds').name('Show Seconds');
+  screenSaverFolder.add(config, 'verticalLayout').name('Vertical Layout');
   screenSaverFolder.open();
 
   gui.close();
@@ -599,17 +616,12 @@ export const main = () => {
 
     // Render time text
     if (fontState.ready) {
-      const timeStr = getTimeString();
       const fontSize = config.fontSize;
-      const padding = config.textPadding;
-      const textX = padding;
-      const textY = canvas.height - padding;
+      const { h, m, s } = getTimeComponents();
 
-      const { glyphBounds, glyphPlane, glyphPos } = prepareTextGlyphs(timeStr, textX, textY, fontSize);
-
-      if (glyphBounds.length > 0) {
-        gl.enable(gl.BLEND);
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      const renderTextLine = (text, x, y) => {
+        const { glyphBounds, glyphPlane, glyphPos } = prepareTextGlyphs(text, x, y, fontSize);
+        if (glyphBounds.length === 0) return;
 
         const flatBounds = glyphBounds.flat();
         const flatPlane = glyphPlane.flat();
@@ -630,9 +642,32 @@ export const main = () => {
           uColor: [1, 1, 1, 0.9],
           uAtlasSize: fontState.atlasSize,
         });
+      };
 
-        gl.disable(gl.BLEND);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+      if (config.verticalLayout) {
+        const lines = config.showSeconds ? [h, m, s] : [h, m];
+        const lineHeight = fontSize * 1.1;
+        const centerY = canvas.height / 2;
+
+        lines.forEach((line, i) => {
+          const textWidth = measureTextWidth(line, fontSize);
+          const textX = (canvas.width - textWidth) / 2;
+          const offsetFromCenter = (i - (lines.length - 1) / 2) * lineHeight;
+          const textY = centerY + offsetFromCenter + fontSize * 0.35;
+          renderTextLine(line, textX, textY);
+        });
+      } else {
+        const timeStr = config.showSeconds ? `${h}:${m}:${s}` : `${h}:${m}`;
+        const textWidth = measureTextWidth(timeStr, fontSize);
+        const textX = (canvas.width - textWidth) / 2;
+        const textY = canvas.height / 2 + fontSize * 0.35;
+        renderTextLine(timeStr, textX, textY);
       }
+
+      gl.disable(gl.BLEND);
     }
 
     requestAnimationFrame(render);
