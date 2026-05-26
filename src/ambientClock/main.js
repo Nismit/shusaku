@@ -336,6 +336,7 @@ export const main = () => {
     atlas: null,
     glyphs: new Map(),
     atlasSize: [220, 220],
+    tabularAdvance: 0,
     ready: false,
     currentFont: null,
   };
@@ -377,6 +378,11 @@ export const main = () => {
         fontState.glyphs.set(String.fromCharCode(glyph.unicode), glyph);
       }
 
+      // Compute tabular advance: max digit width so all 0-9 share the same advance
+      fontState.tabularAdvance = Math.max(
+        ...Array.from('0123456789', c => fontState.glyphs.get(c)?.advance ?? 0)
+      );
+
       fontState.currentFont = fontKey;
       fontState.ready = true;
     } catch (e) {
@@ -403,7 +409,12 @@ export const main = () => {
     let width = 0;
     for (const char of text) {
       const glyph = fontState.glyphs.get(char);
-      if (glyph) width += glyph.advance * fontSize;
+      if (!glyph) continue;
+      const isDigit = char >= '0' && char <= '9';
+      const cellAdvance = isDigit && fontState.tabularAdvance > 0
+        ? fontState.tabularAdvance
+        : glyph.advance;
+      width += cellAdvance * fontSize;
     }
     return width;
   };
@@ -413,20 +424,26 @@ export const main = () => {
     const glyphPlane = [];
     const glyphPos = [];
     let cursorX = x;
+    const isDigit = (c) => c >= '0' && c <= '9';
 
     for (const char of text) {
       const glyph = fontState.glyphs.get(char);
       if (!glyph) continue;
+
+      const tabular = isDigit(char) && fontState.tabularAdvance > 0;
+      const cellAdvance = tabular ? fontState.tabularAdvance : glyph.advance;
+      // Center the glyph within its tabular cell
+      const xOffset = tabular ? (cellAdvance - glyph.advance) * fontSize * 0.5 : 0;
 
       if (glyph.atlasBounds && glyph.planeBounds) {
         const ab = glyph.atlasBounds;
         const pb = glyph.planeBounds;
         glyphBounds.push([ab.left, ab.bottom, ab.right, ab.top]);
         glyphPlane.push([pb.left, pb.bottom, pb.right, pb.top]);
-        glyphPos.push([cursorX, y]);
+        glyphPos.push([cursorX + xOffset, y]);
       }
 
-      cursorX += glyph.advance * fontSize;
+      cursorX += cellAdvance * fontSize;
     }
 
     return { glyphBounds, glyphPlane, glyphPos };
