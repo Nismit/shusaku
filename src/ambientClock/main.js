@@ -101,6 +101,7 @@ export const main = () => {
     textPadding: 40,
     showSeconds: true,
     verticalLayout: false,
+    fontFamily: 'inter',
   };
 
   const easeInOutCubic = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -324,23 +325,40 @@ export const main = () => {
   loadInitialVideo();
 
   // Font atlas loading
+  const FONT_OPTIONS = {
+    'inter': { name: 'Inter', file: 'inter-atlas' },
+    'bebas-neue': { name: 'Bebas Neue', file: 'bebas-neue-atlas' },
+    'orbitron': { name: 'Orbitron', file: 'orbitron-atlas' },
+    'oswald': { name: 'Oswald', file: 'oswald-atlas' },
+  };
+
   const fontState = {
     atlas: null,
     glyphs: new Map(),
     atlasSize: [220, 220],
     ready: false,
+    currentFont: null,
   };
 
-  const loadFontAtlas = async () => {
+  const loadFontAtlas = async (fontKey) => {
+    const fontInfo = FONT_OPTIONS[fontKey];
+    if (!fontInfo || fontState.currentFont === fontKey) return;
+
+    fontState.ready = false;
+
     try {
       const [imgResponse, jsonResponse] = await Promise.all([
-        fetch('/fonts/inter-atlas.png'),
-        fetch('/fonts/inter-atlas.json'),
+        fetch(`/fonts/${fontInfo.file}.png`),
+        fetch(`/fonts/${fontInfo.file}.json`),
       ]);
 
       const imgBlob = await imgResponse.blob();
       const imgBitmap = await createImageBitmap(imgBlob);
       const fontData = await jsonResponse.json();
+
+      if (fontState.atlas) {
+        gl.deleteTexture(fontState.atlas);
+      }
 
       const texture = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -353,18 +371,20 @@ export const main = () => {
 
       fontState.atlas = texture;
       fontState.atlasSize = [fontData.atlas.width, fontData.atlas.height];
+      fontState.glyphs.clear();
 
       for (const glyph of fontData.glyphs) {
         fontState.glyphs.set(String.fromCharCode(glyph.unicode), glyph);
       }
 
+      fontState.currentFont = fontKey;
       fontState.ready = true;
     } catch (e) {
       console.error('Failed to load font atlas:', e);
     }
   };
 
-  loadFontAtlas();
+  loadFontAtlas(config.fontFamily);
 
   const getTimeComponents = () => {
     const now = new Date();
@@ -562,6 +582,12 @@ export const main = () => {
   screenSaverFolder.add(config, 'fontSize', 24, 300).step(4).name('Font Size');
   screenSaverFolder.add(config, 'showSeconds').name('Show Seconds');
   screenSaverFolder.add(config, 'verticalLayout').name('Vertical Layout');
+  screenSaverFolder.add(config, 'fontFamily', {
+    'Inter': 'inter',
+    'Bebas Neue': 'bebas-neue',
+    'Orbitron': 'orbitron',
+    'Oswald': 'oswald',
+  }).name('Font').onChange((value) => loadFontAtlas(value));
   screenSaverFolder.open();
 
   gui.close();
