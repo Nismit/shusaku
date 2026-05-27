@@ -98,7 +98,7 @@ export const main = () => {
     fadeDuration: 3,
     overlayOpacity: 0.5,
     fontSize: 180,
-    textPadding: 40,
+    textPadding: 2,   // vmin 単位 (% of min(width, height)) — デバイス横断で比率一定
     showSeconds: true,
     showDate: false,
     dateFormat: 'weekday-month-day',
@@ -335,6 +335,7 @@ export const main = () => {
     if (p.has('font'))  config.fontFamily     = p.get('font');
     if (p.has('fs'))    config.fontSize        = Number(p.get('fs'));
     if (p.has('pos'))   config.textPosition    = p.get('pos');
+    if (p.has('pad'))   config.textPadding     = Number(p.get('pad'));
     if (p.has('color')) config.textColor       = p.get('color'); // already a hex string
     if (p.has('op'))    config.textOpacity     = Number(p.get('op'));
     if (p.has('over'))  config.overlayOpacity  = Number(p.get('over'));
@@ -350,6 +351,7 @@ export const main = () => {
       font:  config.fontFamily,
       fs:    config.fontSize,
       pos:   config.textPosition,
+      pad:   config.textPadding,
       color: config.textColor, // hex string, no conversion needed
       op:    config.textOpacity,
       over:  config.overlayOpacity,
@@ -480,7 +482,7 @@ export const main = () => {
 
   // 9-grid layout: returns pixel {x, y} anchor for the given text width
   const getTextLayout = (textWidth, fontSize, position = config.textPosition) => {
-    const pad = config.textPadding;
+    const pad = Math.round(config.textPadding / 100 * Math.min(canvas.width, canvas.height));
     const [vPart, hPart] = position.split('-');
 
     let x;
@@ -677,6 +679,7 @@ export const main = () => {
   const screenSaverFolder = gui.addFolder('Screensaver');
   screenSaverFolder.add(config, 'overlayOpacity', 0, 0.8).step(0.05).name('Overlay Opacity');
   screenSaverFolder.add(config, 'fontSize', 24, 300).step(4).name('Font Size');
+  screenSaverFolder.add(config, 'textPadding', 0, 10).step(0.5).name('Edge Padding (vmin)');
   screenSaverFolder.add(config, 'showSeconds').name('Show Seconds');
   screenSaverFolder.add(config, 'showDate').name('Show Date');
   screenSaverFolder.add(config, 'dateFormat', {
@@ -841,8 +844,8 @@ export const main = () => {
       const extraTop = config.showDate && pos.includes('above') ? dateHeightAbove : 0;
       const extraBottom = config.showDate && pos.includes('below') ? dateHeightBelow : 0;
 
-      // Get base layout with adjusted padding
-      const pad = config.textPadding;
+      // textPadding は vmin 単位 → px 換算（デバイス横断で視覚的比率を一定に保つ）
+      const pad = Math.round(config.textPadding / 100 * Math.min(canvas.width, canvas.height));
       const [vPart, hPart] = config.textPosition.split('-');
 
       let timeX;
