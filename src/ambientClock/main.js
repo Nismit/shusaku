@@ -495,27 +495,6 @@ export const main = () => {
     return width;
   };
 
-  // 9-grid layout: returns pixel {x, y} anchor for the given text width
-  const getTextLayout = (textWidth, fontSize, position = config.textPosition) => {
-    const pad = Math.round(config.textPadding / 100 * Math.min(canvas.width, canvas.height));
-    const [vPart, hPart] = position.split('-');
-
-    let x;
-    if (hPart === 'left')   x = pad;
-    else if (hPart === 'right')  x = canvas.width - textWidth - pad;
-    else                         x = (canvas.width - textWidth) / 2; // center
-
-    let y;
-    if (vPart === 'top')    y = pad + fontSize * 0.9;
-    else if (vPart === 'bottom') y = canvas.height - pad;
-    else                         y = canvas.height / 2 + fontSize * 0.35; // middle
-
-    // Y clamp — prevent clipping at top/bottom regardless of font size
-    y = Math.max(fontSize * 0.9, Math.min(canvas.height - pad, y));
-
-    return { x, y };
-  };
-
   const prepareTextGlyphs = (text, x, y, fontSize) => {
     const glyphBounds = [];
     const glyphPlane = [];
@@ -533,6 +512,10 @@ export const main = () => {
       const xOffset = tabular ? (cellAdvance - glyph.advance) * fontSize * 0.5 : 0;
 
       if (glyph.atlasBounds && glyph.planeBounds) {
+        if (glyphBounds.length >= 32) {
+          console.warn(`[msdfText] glyph limit (32) exceeded for text: "${text}"`);
+          break;
+        }
         const ab = glyph.atlasBounds;
         const pb = glyph.planeBounds;
         glyphBounds.push([ab.left, ab.bottom, ab.right, ab.top]);
@@ -824,9 +807,10 @@ export const main = () => {
         const flatPlane = glyphPlane.flat();
         const flatPos = glyphPos.flat();
 
-        while (flatBounds.length < 64) flatBounds.push(0);
-        while (flatPlane.length < 64) flatPlane.push(0);
-        while (flatPos.length < 32) flatPos.push(0);
+        // Shader supports GLYPH_MAX=32; pad arrays to fixed size
+        while (flatBounds.length < 128) flatBounds.push(0);
+        while (flatPlane.length < 128) flatPlane.push(0);
+        while (flatPos.length  <  64)  flatPos.push(0);
 
         cgl.pass(msdfTextShader, {
           uAtlas: fontState.atlas,

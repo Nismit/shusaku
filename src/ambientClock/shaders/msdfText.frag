@@ -5,9 +5,9 @@ in vec2 vTexCoord;
 out vec4 fragColor;
 
 uniform sampler2D uAtlas;
-uniform vec4 uGlyphBounds[16];  // atlasBounds for each character (max 16 chars)
-uniform vec4 uGlyphPlane[16];   // planeBounds for each character
-uniform vec2 uGlyphPos[16];     // screen position for each character
+uniform vec4 uGlyphBounds[32];  // atlasBounds for each character (max 32 chars)
+uniform vec4 uGlyphPlane[32];   // planeBounds for each character
+uniform vec2 uGlyphPos[32];     // screen position for each character
 uniform int uGlyphCount;
 uniform vec2 uResolution;
 uniform float uFontSize;
@@ -22,7 +22,7 @@ void main() {
   vec2 pixelCoord = vec2(vTexCoord.x, 1.0 - vTexCoord.y) * uResolution;
   vec4 color = vec4(0.0);
 
-  for (int i = 0; i < 16; i++) {
+  for (int i = 0; i < 32; i++) {
     if (i >= uGlyphCount) break;
 
     vec4 atlas = uGlyphBounds[i];  // left, bottom, right, top in atlas pixels
