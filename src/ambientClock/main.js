@@ -100,6 +100,9 @@ export const main = () => {
     fontSize: 180,
     textPadding: 40,
     showSeconds: true,
+    showDate: false,
+    dateFormat: 'weekday-month-day',
+    datePosition: 'below',
     fontFamily: 'inter',
     textPosition: 'middle-center',
     textColor: '#ffffff',
@@ -336,6 +339,9 @@ export const main = () => {
     if (p.has('op'))    config.textOpacity     = Number(p.get('op'));
     if (p.has('over'))  config.overlayOpacity  = Number(p.get('over'));
     if (p.has('secs'))  config.showSeconds     = p.get('secs') !== '0';
+    if (p.has('date'))  config.showDate        = p.get('date') === '1';
+    if (p.has('dfmt'))  config.dateFormat      = p.get('dfmt');
+    if (p.has('dpos'))  config.datePosition    = p.get('dpos');
     return p.has('pub');
   };
 
@@ -348,6 +354,9 @@ export const main = () => {
       op:    config.textOpacity,
       over:  config.overlayOpacity,
       secs:  config.showSeconds ? '1' : '0',
+      date:  config.showDate ? '1' : '0',
+      dfmt:  config.dateFormat,
+      dpos:  config.datePosition,
       pub:   '1',
     });
     return `${location.origin}${location.pathname}?${p}`;
@@ -434,6 +443,27 @@ export const main = () => {
     return config.showSeconds ? `${h}:${m}:${s}` : `${h}:${m}`;
   };
 
+  const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  const getDateString = () => {
+    const now = new Date();
+    const weekday = WEEKDAYS[now.getDay()];
+    const month = MONTHS[now.getMonth()];
+    const day = now.getDate();
+    const year = now.getFullYear();
+    const monthNum = String(now.getMonth() + 1).padStart(2, '0');
+    const dayNum = String(day).padStart(2, '0');
+
+    switch (config.dateFormat) {
+      case 'weekday-month-day': return `${weekday}, ${month} ${day}`;
+      case 'month-day-year':    return `${month} ${day}, ${year}`;
+      case 'numeric-ymd':       return `${year}/${monthNum}/${dayNum}`;
+      case 'numeric-mdy':       return `${monthNum}/${dayNum}/${year}`;
+      default:                  return `${weekday}, ${month} ${day}`;
+    }
+  };
+
   const measureTextWidth = (text, fontSize) => {
     let width = 0;
     for (const char of text) {
@@ -449,9 +479,9 @@ export const main = () => {
   };
 
   // 9-grid layout: returns pixel {x, y} anchor for the given text width
-  const getTextLayout = (textWidth, fontSize) => {
+  const getTextLayout = (textWidth, fontSize, position = config.textPosition) => {
     const pad = config.textPadding;
-    const [vPart, hPart] = config.textPosition.split('-');
+    const [vPart, hPart] = position.split('-');
 
     let x;
     if (hPart === 'left')   x = pad;
@@ -648,6 +678,21 @@ export const main = () => {
   screenSaverFolder.add(config, 'overlayOpacity', 0, 0.8).step(0.05).name('Overlay Opacity');
   screenSaverFolder.add(config, 'fontSize', 24, 300).step(4).name('Font Size');
   screenSaverFolder.add(config, 'showSeconds').name('Show Seconds');
+  screenSaverFolder.add(config, 'showDate').name('Show Date');
+  screenSaverFolder.add(config, 'dateFormat', {
+    'Mon, May 26':   'weekday-month-day',
+    'May 26, 2026':  'month-day-year',
+    '2026/05/26':    'numeric-ymd',
+    '05/26/2026':    'numeric-mdy',
+  }).name('Date Format');
+  screenSaverFolder.add(config, 'datePosition', {
+    '↑ Above':       'above',
+    '↓ Below':       'below',
+    '↖ Above Left':  'above-left',
+    '↗ Above Right': 'above-right',
+    '↙ Below Left':  'below-left',
+    '↘ Below Right': 'below-right',
+  }).name('Date Position');
   screenSaverFolder.add(config, 'textPosition', {
     '↖ Top Left':      'top-left',
     '↑ Top Center':    'top-center',
@@ -750,8 +795,8 @@ export const main = () => {
         config.textOpacity,
       ];
 
-      const renderTextLine = (text, x, y) => {
-        const { glyphBounds, glyphPlane, glyphPos } = prepareTextGlyphs(text, x, y, fontSize);
+      const renderTextLine = (text, x, y, size) => {
+        const { glyphBounds, glyphPlane, glyphPos } = prepareTextGlyphs(text, x, y, size);
         if (glyphBounds.length === 0) return;
 
         const flatBounds = glyphBounds.flat();
@@ -769,7 +814,7 @@ export const main = () => {
           uGlyphPos: flatPos,
           uGlyphCount: glyphBounds.length,
           uResolution: [canvas.width, canvas.height],
-          uFontSize: fontSize,
+          uFontSize: size,
           uColor: textColor,
           uAtlasSize: fontState.atlasSize,
         });
@@ -779,9 +824,66 @@ export const main = () => {
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
       const timeStr = config.showSeconds ? `${h}:${m}:${s}` : `${h}:${m}`;
-      const textWidth = measureTextWidth(timeStr, fontSize);
-      const { x: textX, y: textY } = getTextLayout(textWidth, fontSize);
-      renderTextLine(timeStr, textX, textY);
+      const timeWidth = measureTextWidth(timeStr, fontSize);
+
+      let dateStr, dateFontSize, dateWidth, spacing;
+      if (config.showDate) {
+        dateStr = getDateString();
+        dateFontSize = fontSize * 0.4;
+        dateWidth = measureTextWidth(dateStr, dateFontSize);
+        spacing = fontSize * 0.2;
+      }
+
+      // Calculate extra padding needed for date
+      const pos = config.datePosition;
+      const dateHeightAbove = config.showDate ? dateFontSize * 0.9 + spacing : 0;
+      const dateHeightBelow = config.showDate ? dateFontSize * 0.9 : 0;
+      const extraTop = config.showDate && pos.includes('above') ? dateHeightAbove : 0;
+      const extraBottom = config.showDate && pos.includes('below') ? dateHeightBelow : 0;
+
+      // Get base layout with adjusted padding
+      const pad = config.textPadding;
+      const [vPart, hPart] = config.textPosition.split('-');
+
+      let timeX;
+      if (hPart === 'left')   timeX = pad;
+      else if (hPart === 'right')  timeX = canvas.width - timeWidth - pad;
+      else                         timeX = (canvas.width - timeWidth) / 2;
+
+      let timeY;
+      if (vPart === 'top')    timeY = pad + fontSize * 0.9 + extraTop;
+      else if (vPart === 'bottom') timeY = canvas.height - pad - extraBottom;
+      else                         timeY = canvas.height / 2 + fontSize * 0.35;
+
+      timeY = Math.max(fontSize * 0.9 + extraTop, Math.min(canvas.height - pad - extraBottom, timeY));
+
+      renderTextLine(timeStr, timeX, timeY, fontSize);
+
+      if (config.showDate) {
+        const timeCenterX = timeX + timeWidth / 2;
+        const timeTop = timeY - fontSize * 0.75;
+        const timeBottom = timeY + fontSize * 0.15;
+
+        let dateX, dateY;
+
+        // Vertical position
+        if (pos.includes('above')) {
+          dateY = timeTop - spacing;
+        } else {
+          dateY = timeBottom + dateFontSize * 0.8;
+        }
+
+        // Horizontal position
+        if (pos.endsWith('-left')) {
+          dateX = timeX;
+        } else if (pos.endsWith('-right')) {
+          dateX = timeX + timeWidth - dateWidth;
+        } else {
+          dateX = timeCenterX - dateWidth / 2;
+        }
+
+        renderTextLine(dateStr, dateX, dateY, dateFontSize);
+      }
 
       gl.disable(gl.BLEND);
     }
