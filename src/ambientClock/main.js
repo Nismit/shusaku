@@ -76,7 +76,19 @@ export const main = () => {
   });
   cgl.fitWindow();
 
+  // DPR-aware sizing: fitWindow() uses CSS pixels; we override to physical pixels
+  // so text and edges are crisp on retina / high-DPI screens (cap at 2 to avoid GPU overload)
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const gl = cgl.gl;
+  const applyDPR = () => {
+    canvas.width  = Math.round(window.innerWidth  * dpr);
+    canvas.height = Math.round(window.innerHeight * dpr);
+    canvas.style.width  = window.innerWidth  + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    gl.viewport(0, 0, canvas.width, canvas.height);
+  };
+  applyDPR();
+  window.addEventListener('resize', applyDPR);
 
   const canUseFloat32 = gl.getExtension('EXT_color_buffer_float') && gl.getExtension('OES_texture_float_linear');
   const floatFormat = canUseFloat32 ? gl.RGBA32F : gl.RGBA16F;
@@ -91,6 +103,7 @@ export const main = () => {
     splatForce: 70,
     displacementScale: 0.025,
     chromaStrength: 0.35,
+    autoEnabled: true,
     autoSpeed: 0.35,
     autoScale: 0.5,
     autoNoiseScale: 0.8,
@@ -340,6 +353,7 @@ export const main = () => {
     if (p.has('op'))    config.textOpacity     = Number(p.get('op'));
     if (p.has('over'))  config.overlayOpacity  = Number(p.get('over'));
     if (p.has('secs'))  config.showSeconds     = p.get('secs') !== '0';
+    if (p.has('auto'))  config.autoEnabled     = p.get('auto') !== '0';
     if (p.has('date'))  config.showDate        = p.get('date') === '1';
     if (p.has('dfmt'))  config.dateFormat      = p.get('dfmt');
     if (p.has('dpos'))  config.datePosition    = p.get('dpos');
@@ -356,6 +370,7 @@ export const main = () => {
       op:    config.textOpacity,
       over:  config.overlayOpacity,
       secs:  config.showSeconds ? '1' : '0',
+      auto:  config.autoEnabled ? '1' : '0',
       date:  config.showDate ? '1' : '0',
       dfmt:  config.dateFormat,
       dpos:  config.datePosition,
@@ -665,6 +680,7 @@ export const main = () => {
   gui.add(config, 'chromaStrength', 0, 1).step(0.01).name('Chroma');
 
   const autoFolder = gui.addFolder('Auto Cursor');
+  autoFolder.add(config, 'autoEnabled').name('Enabled');
   autoFolder.add(config, 'autoSpeed', 0.1, 1).step(0.05).name('Speed');
   autoFolder.add(config, 'autoScale', 0.1, 1).step(0.05).name('Movement Scale');
   autoFolder.add(config, 'autoNoiseScale', 0.1, 2).step(0.1).name('Noise Scale');
@@ -761,12 +777,14 @@ export const main = () => {
     }
 
     // Auto cursor input
-    updateAutoCursor(dt);
-    const autoDx = (autoCursor.x - autoCursor.prevX) * config.autoScale;
-    const autoDy = (autoCursor.y - autoCursor.prevY) * config.autoScale;
-    const autoSpeed = Math.sqrt(autoDx * autoDx + autoDy * autoDy);
-    if (autoSpeed > 0.00001) {
-      splat(autoCursor.x, autoCursor.y, autoDx, autoDy);
+    if (config.autoEnabled) {
+      updateAutoCursor(dt);
+      const autoDx = (autoCursor.x - autoCursor.prevX) * config.autoScale;
+      const autoDy = (autoCursor.y - autoCursor.prevY) * config.autoScale;
+      const autoSpeed = Math.sqrt(autoDx * autoDx + autoDy * autoDy);
+      if (autoSpeed > 0.00001) {
+        splat(autoCursor.x, autoCursor.y, autoDx, autoDy);
+      }
     }
 
     updateFade(dt);

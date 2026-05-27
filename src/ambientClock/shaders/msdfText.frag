@@ -45,7 +45,14 @@ void main() {
       vec3 msdf = texture(uAtlas, atlasUv).rgb;
       float sd = median(msdf.r, msdf.g, msdf.b);
 
-      float screenPxRange = 2.0 * uFontSize / 32.0;
+      // Derivative-based screenPxRange: accurate at any resolution/DPR/zoom level.
+      // distanceRange=2 (from atlas JSON), uAtlasSize in atlas pixels.
+      // unitRange = how many UV units one distance-range spans in the atlas.
+      // screenTexSize = how many screen pixels one UV unit spans (via fwidth).
+      vec2 unitRange = vec2(2.0) / uAtlasSize;
+      vec2 screenTexSize = vec2(1.0) / max(fwidth(atlasUv), vec2(1e-4));
+      float screenPxRange = max(0.5 * dot(unitRange, screenTexSize), 1.0);
+
       float screenPxDistance = screenPxRange * (sd - 0.5);
       float opacity = clamp(screenPxDistance + 0.5, 0.0, 1.0);
 
