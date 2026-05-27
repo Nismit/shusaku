@@ -100,7 +100,6 @@ export const main = () => {
     fontSize: 180,
     textPadding: 40,
     showSeconds: true,
-    verticalLayout: false,
     fontFamily: 'inter',
     textPosition: 'middle-center',
     textColor: '#ffffff',
@@ -337,7 +336,6 @@ export const main = () => {
     if (p.has('op'))    config.textOpacity     = Number(p.get('op'));
     if (p.has('over'))  config.overlayOpacity  = Number(p.get('over'));
     if (p.has('secs'))  config.showSeconds     = p.get('secs') !== '0';
-    if (p.has('vert'))  config.verticalLayout  = p.get('vert') === '1';
     return p.has('pub');
   };
 
@@ -350,7 +348,6 @@ export const main = () => {
       op:    config.textOpacity,
       over:  config.overlayOpacity,
       secs:  config.showSeconds ? '1' : '0',
-      vert:  config.verticalLayout ? '1' : '0',
       pub:   '1',
     });
     return `${location.origin}${location.pathname}?${p}`;
@@ -651,7 +648,6 @@ export const main = () => {
   screenSaverFolder.add(config, 'overlayOpacity', 0, 0.8).step(0.05).name('Overlay Opacity');
   screenSaverFolder.add(config, 'fontSize', 24, 300).step(4).name('Font Size');
   screenSaverFolder.add(config, 'showSeconds').name('Show Seconds');
-  screenSaverFolder.add(config, 'verticalLayout').name('Vertical Layout');
   screenSaverFolder.add(config, 'textPosition', {
     '↖ Top Left':      'top-left',
     '↑ Top Center':    'top-center',
@@ -782,24 +778,10 @@ export const main = () => {
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-      if (config.verticalLayout) {
-        const lines = config.showSeconds ? [h, m, s] : [h, m];
-        const lineHeight = fontSize * 1.1;
-        // Use Y from a representative width=0 call; X per-line from actual width
-        const { y: centerY } = getTextLayout(0, fontSize);
-
-        lines.forEach((line, i) => {
-          const w = measureTextWidth(line, fontSize);
-          const { x } = getTextLayout(w, fontSize);
-          const offsetY = (i - (lines.length - 1) / 2) * lineHeight;
-          renderTextLine(line, x, centerY + offsetY);
-        });
-      } else {
-        const timeStr = config.showSeconds ? `${h}:${m}:${s}` : `${h}:${m}`;
-        const textWidth = measureTextWidth(timeStr, fontSize);
-        const { x: textX, y: textY } = getTextLayout(textWidth, fontSize);
-        renderTextLine(timeStr, textX, textY);
-      }
+      const timeStr = config.showSeconds ? `${h}:${m}:${s}` : `${h}:${m}`;
+      const textWidth = measureTextWidth(timeStr, fontSize);
+      const { x: textX, y: textY } = getTextLayout(textWidth, fontSize);
+      renderTextLine(timeStr, textX, textY);
 
       gl.disable(gl.BLEND);
     }
