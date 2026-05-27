@@ -885,6 +885,9 @@ export const main = () => {
           dateX = timeCenterX - dateWidth / 2;
         }
 
+        // Clamp: keep date within canvas bounds (glyph bounds can overshoot logical advance)
+        dateX = Math.max(pad, Math.min(canvas.width - dateWidth - pad, dateX));
+
         renderTextLine(dateStr, dateX, dateY, dateFontSize);
       }
 
