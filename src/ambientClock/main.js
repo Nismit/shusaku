@@ -103,7 +103,7 @@ export const main = () => {
     verticalLayout: false,
     fontFamily: 'inter',
     textPosition: 'middle-center',
-    textColor: [255, 255, 255],
+    textColor: '#ffffff',
     textOpacity: 0.9,
   };
 
@@ -328,19 +328,12 @@ export const main = () => {
   loadInitialVideo();
 
   // --- URL param helpers ---
-  const hexToRgb255 = (hex) => {
-    const n = parseInt(hex.replace('#', ''), 16);
-    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-  };
-  const rgb255ToHex = ([r, g, b]) =>
-    '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
-
   const loadFromUrl = () => {
     const p = new URLSearchParams(window.location.search);
     if (p.has('font'))  config.fontFamily     = p.get('font');
     if (p.has('fs'))    config.fontSize        = Number(p.get('fs'));
     if (p.has('pos'))   config.textPosition    = p.get('pos');
-    if (p.has('color')) config.textColor       = hexToRgb255(p.get('color'));
+    if (p.has('color')) config.textColor       = p.get('color'); // already a hex string
     if (p.has('op'))    config.textOpacity     = Number(p.get('op'));
     if (p.has('over'))  config.overlayOpacity  = Number(p.get('over'));
     if (p.has('secs'))  config.showSeconds     = p.get('secs') !== '0';
@@ -353,7 +346,7 @@ export const main = () => {
       font:  config.fontFamily,
       fs:    config.fontSize,
       pos:   config.textPosition,
-      color: rgb255ToHex(config.textColor),
+      color: config.textColor, // hex string, no conversion needed
       op:    config.textOpacity,
       over:  config.overlayOpacity,
       secs:  config.showSeconds ? '1' : '0',
@@ -752,7 +745,14 @@ export const main = () => {
     if (fontState.ready) {
       const fontSize = config.fontSize;
       const { h, m, s } = getTimeComponents();
-      const textColor = [...config.textColor.map(c => c / 255), config.textOpacity];
+      // Parse hex string '#rrggbb' → [r, g, b, a] in 0-1 range
+      const hexN = parseInt(config.textColor.replace('#', ''), 16);
+      const textColor = [
+        ((hexN >> 16) & 255) / 255,
+        ((hexN >>  8) & 255) / 255,
+        ( hexN        & 255) / 255,
+        config.textOpacity,
+      ];
 
       const renderTextLine = (text, x, y) => {
         const { glyphBounds, glyphPlane, glyphPos } = prepareTextGlyphs(text, x, y, fontSize);
