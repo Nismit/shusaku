@@ -102,6 +102,9 @@ export const main = () => {
     showSeconds: true,
     verticalLayout: false,
     fontFamily: 'inter',
+    textPosition: 'middle-center',
+    textColor: [255, 255, 255],
+    textOpacity: 0.9,
   };
 
   const easeInOutCubic = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -324,7 +327,43 @@ export const main = () => {
 
   loadInitialVideo();
 
-  // Font atlas loading
+  // --- URL param helpers ---
+  const hexToRgb255 = (hex) => {
+    const n = parseInt(hex.replace('#', ''), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  const rgb255ToHex = ([r, g, b]) =>
+    '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+
+  const loadFromUrl = () => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.has('font'))  config.fontFamily     = p.get('font');
+    if (p.has('fs'))    config.fontSize        = Number(p.get('fs'));
+    if (p.has('pos'))   config.textPosition    = p.get('pos');
+    if (p.has('color')) config.textColor       = hexToRgb255(p.get('color'));
+    if (p.has('op'))    config.textOpacity     = Number(p.get('op'));
+    if (p.has('over'))  config.overlayOpacity  = Number(p.get('over'));
+    if (p.has('secs'))  config.showSeconds     = p.get('secs') !== '0';
+    if (p.has('vert'))  config.verticalLayout  = p.get('vert') === '1';
+    return p.has('pub');
+  };
+
+  const buildPublishUrl = () => {
+    const p = new URLSearchParams({
+      font:  config.fontFamily,
+      fs:    config.fontSize,
+      pos:   config.textPosition,
+      color: rgb255ToHex(config.textColor),
+      op:    config.textOpacity,
+      over:  config.overlayOpacity,
+      secs:  config.showSeconds ? '1' : '0',
+      vert:  config.verticalLayout ? '1' : '0',
+      pub:   '1',
+    });
+    return `${location.origin}${location.pathname}?${p}`;
+  };
+
+  // --- Font atlas loading
   const FONT_OPTIONS = {
     'inter': { name: 'Inter', file: 'inter-atlas' },
     'bebas-neue': { name: 'Bebas Neue', file: 'bebas-neue-atlas' },
@@ -417,6 +456,27 @@ export const main = () => {
       width += cellAdvance * fontSize;
     }
     return width;
+  };
+
+  // 9-grid layout: returns pixel {x, y} anchor for the given text width
+  const getTextLayout = (textWidth, fontSize) => {
+    const pad = config.textPadding;
+    const [vPart, hPart] = config.textPosition.split('-');
+
+    let x;
+    if (hPart === 'left')   x = pad;
+    else if (hPart === 'right')  x = canvas.width - textWidth - pad;
+    else                         x = (canvas.width - textWidth) / 2; // center
+
+    let y;
+    if (vPart === 'top')    y = pad + fontSize * 0.9;
+    else if (vPart === 'bottom') y = canvas.height - pad;
+    else                         y = canvas.height / 2 + fontSize * 0.35; // middle
+
+    // Y clamp — prevent clipping at top/bottom regardless of font size
+    y = Math.max(fontSize * 0.9, Math.min(canvas.height - pad, y));
+
+    return { x, y };
   };
 
   const prepareTextGlyphs = (text, x, y, fontSize) => {
@@ -599,6 +659,19 @@ export const main = () => {
   screenSaverFolder.add(config, 'fontSize', 24, 300).step(4).name('Font Size');
   screenSaverFolder.add(config, 'showSeconds').name('Show Seconds');
   screenSaverFolder.add(config, 'verticalLayout').name('Vertical Layout');
+  screenSaverFolder.add(config, 'textPosition', {
+    '↖ Top Left':      'top-left',
+    '↑ Top Center':    'top-center',
+    '↗ Top Right':     'top-right',
+    '← Middle Left':   'middle-left',
+    '⊙ Middle Center': 'middle-center',
+    '→ Middle Right':  'middle-right',
+    '↙ Bottom Left':   'bottom-left',
+    '↓ Bottom Center': 'bottom-center',
+    '↘ Bottom Right':  'bottom-right',
+  }).name('Position');
+  screenSaverFolder.addColor(config, 'textColor').name('Text Color');
+  screenSaverFolder.add(config, 'textOpacity', 0, 1).step(0.01).name('Text Opacity');
   screenSaverFolder.add(config, 'fontFamily', {
     'Inter': 'inter',
     'Bebas Neue': 'bebas-neue',
@@ -606,6 +679,24 @@ export const main = () => {
     'Oswald': 'oswald',
   }).name('Font').onChange((value) => loadFontAtlas(value));
   screenSaverFolder.open();
+
+  const publishObj = {
+    copy: () => {
+      const url = buildPublishUrl();
+      navigator.clipboard.writeText(url).catch(() => {});
+      const ctrl = gui.controllersRecursive().find(c => c.property === 'copy');
+      if (ctrl) {
+        ctrl.name('Copied ✓');
+        setTimeout(() => ctrl.name('📋 Copy Publish URL'), 2000);
+      }
+    },
+  };
+  gui.add(publishObj, 'copy').name('📋 Copy Publish URL');
+
+  const isPublished = loadFromUrl();
+  // Font (and other config) may have changed via URL params — always resync
+  loadFontAtlas(config.fontFamily);
+  if (isPublished) gui.hide();
 
   gui.close();
 
@@ -661,6 +752,7 @@ export const main = () => {
     if (fontState.ready) {
       const fontSize = config.fontSize;
       const { h, m, s } = getTimeComponents();
+      const textColor = [...config.textColor.map(c => c / 255), config.textOpacity];
 
       const renderTextLine = (text, x, y) => {
         const { glyphBounds, glyphPlane, glyphPos } = prepareTextGlyphs(text, x, y, fontSize);
@@ -682,7 +774,7 @@ export const main = () => {
           uGlyphCount: glyphBounds.length,
           uResolution: [canvas.width, canvas.height],
           uFontSize: fontSize,
-          uColor: [1, 1, 1, 0.9],
+          uColor: textColor,
           uAtlasSize: fontState.atlasSize,
         });
       };
@@ -693,20 +785,19 @@ export const main = () => {
       if (config.verticalLayout) {
         const lines = config.showSeconds ? [h, m, s] : [h, m];
         const lineHeight = fontSize * 1.1;
-        const centerY = canvas.height / 2;
+        // Use Y from a representative width=0 call; X per-line from actual width
+        const { y: centerY } = getTextLayout(0, fontSize);
 
         lines.forEach((line, i) => {
-          const textWidth = measureTextWidth(line, fontSize);
-          const textX = (canvas.width - textWidth) / 2;
-          const offsetFromCenter = (i - (lines.length - 1) / 2) * lineHeight;
-          const textY = centerY + offsetFromCenter + fontSize * 0.35;
-          renderTextLine(line, textX, textY);
+          const w = measureTextWidth(line, fontSize);
+          const { x } = getTextLayout(w, fontSize);
+          const offsetY = (i - (lines.length - 1) / 2) * lineHeight;
+          renderTextLine(line, x, centerY + offsetY);
         });
       } else {
         const timeStr = config.showSeconds ? `${h}:${m}:${s}` : `${h}:${m}`;
         const textWidth = measureTextWidth(timeStr, fontSize);
-        const textX = (canvas.width - textWidth) / 2;
-        const textY = canvas.height / 2 + fontSize * 0.35;
+        const { x: textX, y: textY } = getTextLayout(textWidth, fontSize);
         renderTextLine(timeStr, textX, textY);
       }
 
