@@ -13,6 +13,8 @@ uniform vec2 uResolution;
 uniform float uFontSize;
 uniform vec4 uColor;
 uniform vec2 uAtlasSize;
+uniform sampler2D uDyeField;    // fluid dye — rg used for displacement
+uniform float uFluidDisplace;   // 0 = off; >0 = same scale as video displacement
 
 float median(float r, float g, float b) {
   return max(min(r, g), min(max(r, g), b));
@@ -20,6 +22,15 @@ float median(float r, float g, float b) {
 
 void main() {
   vec2 pixelCoord = vec2(vTexCoord.x, 1.0 - vTexCoord.y) * uResolution;
+
+  // Fluid displacement: shift sampling point by dye-encoded velocity.
+  // pixelCoord is y-down, dye UV is y-up → negate G component to align axes.
+  vec2 dp = pixelCoord;
+  if (uFluidDisplace > 0.0) {
+    vec2 dye = texture(uDyeField, vTexCoord).rg;
+    dp += vec2(dye.r, -dye.g) * uFluidDisplace * uResolution;
+  }
+
   vec4 color = vec4(0.0);
 
   for (int i = 0; i < 32; i++) {
@@ -32,10 +43,10 @@ void main() {
     vec2 glyphMin = pos + vec2(plane.x, -plane.w) * uFontSize;
     vec2 glyphMax = pos + vec2(plane.z, -plane.y) * uFontSize;
 
-    if (pixelCoord.x >= glyphMin.x && pixelCoord.x <= glyphMax.x &&
-        pixelCoord.y >= glyphMin.y && pixelCoord.y <= glyphMax.y) {
+    if (dp.x >= glyphMin.x && dp.x <= glyphMax.x &&
+        dp.y >= glyphMin.y && dp.y <= glyphMax.y) {
 
-      vec2 localUv = (pixelCoord - glyphMin) / (glyphMax - glyphMin);
+      vec2 localUv = (dp - glyphMin) / (glyphMax - glyphMin);
 
       vec2 atlasUv = vec2(
         (atlas.x + localUv.x * (atlas.z - atlas.x)) / uAtlasSize.x,
