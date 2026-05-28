@@ -120,6 +120,7 @@ export const main = () => {
     textPosition: 'middle-center',
     textColor: '#ffffff',
     textOpacity: 0.9,
+    fluidText: false,
   };
 
   const easeInOutCubic = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -353,6 +354,7 @@ export const main = () => {
     if (p.has('op'))    config.textOpacity     = Number(p.get('op'));
     if (p.has('over'))  config.overlayOpacity  = Number(p.get('over'));
     if (p.has('secs'))  config.showSeconds     = p.get('secs') !== '0';
+    if (p.has('ftxt'))  config.fluidText       = p.get('ftxt') === '1';
     if (p.has('auto'))  config.autoEnabled     = p.get('auto') !== '0';
     if (p.has('date'))  config.showDate        = p.get('date') === '1';
     if (p.has('dfmt'))  config.dateFormat      = p.get('dfmt');
@@ -370,6 +372,7 @@ export const main = () => {
       op:    config.textOpacity,
       over:  config.overlayOpacity,
       secs:  config.showSeconds ? '1' : '0',
+      ftxt:  config.fluidText ? '1' : '0',
       auto:  config.autoEnabled ? '1' : '0',
       date:  config.showDate ? '1' : '0',
       dfmt:  config.dateFormat,
@@ -708,6 +711,7 @@ export const main = () => {
   }).name('Position');
   screenSaverFolder.addColor(config, 'textColor').name('Text Color');
   screenSaverFolder.add(config, 'textOpacity', 0, 1).step(0.01).name('Text Opacity');
+  screenSaverFolder.add(config, 'fluidText').name('Fluid Effect on Text');
   screenSaverFolder.add(config, 'fontFamily', {
     'Inter': 'inter',
     'Bebas Neue': 'bebas-neue',
@@ -822,6 +826,8 @@ export const main = () => {
           uFontSize: size,
           uColor: textColor,
           uAtlasSize: fontState.atlasSize,
+          uDyeField: dye.read,
+          uFluidDisplace: config.fluidText ? config.displacementScale : 0,
         });
       };
 
