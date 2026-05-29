@@ -15,6 +15,7 @@ export default defineConfig({
         ambientClock: resolve(__dirname, 'src/ambientClock/index.html'),
         tunnelRaymarching: resolve(__dirname, 'src/tunnelRaymarching/index.html'),
         mixFunctions: resolve(__dirname, 'src/mixFunctions/index.html'),
+        volumetricSmoke: resolve(__dirname, 'src/volumetricSmoke/index.html'),
       },
     },
   },
