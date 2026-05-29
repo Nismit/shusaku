@@ -1,7 +1,9 @@
 // Shared helpers for the flat-3D (tiled 2D atlas) volume representation.
 // A WxHxD volume is stored as a 2D texture: D slices laid out in a
-// uTiles.x by uTiles.y grid. esChottoGL prepends #version / precision /
-// `in vec2 vTexCoord;` / `out vec4 fragColor;` so this file must NOT.
+// uTiles.x by uTiles.y grid. esChottoGL injects the version header, the
+// float precision, the vTexCoord varying and the fragColor output, so this
+// file must declare none of them (and must not mention them literally,
+// since the framework detects existing declarations by text match).
 
 uniform vec3 uVolumeDim;   // (W, H, D) in cells
 uniform vec2 uTiles;       // (cols, rows) of slice tiles in the atlas
