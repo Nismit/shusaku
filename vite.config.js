@@ -10,6 +10,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'src/index.html'),
+        golFluid: resolve(__dirname, 'src/golFluid/index.html'),
         stableFluid: resolve(__dirname, 'src/stableFluid/index.html'),
         fluidGallery: resolve(__dirname, 'src/fluidGallery/index.html'),
         ambientClock: resolve(__dirname, 'src/ambientClock/index.html'),
