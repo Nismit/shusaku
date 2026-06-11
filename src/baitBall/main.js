@@ -541,6 +541,7 @@ void main() {
   gui.add(params, 'randomize').name('Randomize');
   gui.add(params, 'exportParams').name('📋 Export Params');
   gui.close();
+  gui.hide();
 
   // --- Resize ---
   const onResize = () => {
