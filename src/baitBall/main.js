@@ -3,26 +3,26 @@ import { Timer } from '../libs/Timer.js';
 import { PointerInput } from '../libs/PointerInput.js';
 import GUI from '../libs/lil-gui.esm.min.js';
 
-import initFrag from '../libs/shaderLoader.js?path=./shaders/init.frag';
-import updateFrag from '../libs/shaderLoader.js?path=./shaders/update.frag';
-import particleVert from '../libs/shaderLoader.js?path=./shaders/particle.vert';
-import particleFrag from '../libs/shaderLoader.js?path=./shaders/particle.frag';
-import floorVert from '../libs/shaderLoader.js?path=./shaders/floor.vert';
-import floorFrag from '../libs/shaderLoader.js?path=./shaders/floor.frag';
-import shadowVert from '../libs/shaderLoader.js?path=./shaders/shadow.vert';
-import shadowFrag from '../libs/shaderLoader.js?path=./shaders/shadow.frag';
-import dustVert from '../libs/shaderLoader.js?path=./shaders/dust.vert';
-import dustFrag from '../libs/shaderLoader.js?path=./shaders/dust.frag';
+import initFrag from './shaders/init.frag?raw';
+import updateFrag from './shaders/update.frag?raw';
+import particleVert from './shaders/particle.vert?raw';
+import particleFrag from './shaders/particle.frag?raw';
+import floorVert from './shaders/floor.vert?raw';
+import floorFrag from './shaders/floor.frag?raw';
+import shadowVert from './shaders/shadow.vert?raw';
+import shadowFrag from './shaders/shadow.frag?raw';
+import dustVert from './shaders/dust.vert?raw';
+import dustFrag from './shaders/dust.frag?raw';
 
-import particleDepthFrag from '../libs/shaderLoader.js?path=./shaders/particleDepth.frag';
-import floorDepthFrag from '../libs/shaderLoader.js?path=./shaders/floorDepth.frag';
-import dustDepthFrag from '../libs/shaderLoader.js?path=./shaders/dustDepth.frag';
+import particleDepthFrag from './shaders/particleDepth.frag?raw';
+import floorDepthFrag from './shaders/floorDepth.frag?raw';
+import dustDepthFrag from './shaders/dustDepth.frag?raw';
 
-import thresholdFrag from '../libs/shaderLoader.js?path=./shaders/threshold.frag';
-import blurFrag from '../libs/shaderLoader.js?path=./shaders/blur.frag';
-import godrayFrag from '../libs/shaderLoader.js?path=./shaders/godray.frag';
-import causticsPlaneVert from '../libs/shaderLoader.js?path=./shaders/causticsPlane.vert';
-import causticsPlaneFrag from '../libs/shaderLoader.js?path=./shaders/causticsPlane.frag';
+import thresholdFrag from './shaders/threshold.frag?raw';
+import blurFrag from './shaders/blur.frag?raw';
+import godrayFrag from './shaders/godray.frag?raw';
+import causticsPlaneVert from './shaders/causticsPlane.vert?raw';
+import causticsPlaneFrag from './shaders/causticsPlane.frag?raw';
 
 const INSTANCE_TEX_SIZE = 32;
 const INSTANCE_COUNT = INSTANCE_TEX_SIZE * INSTANCE_TEX_SIZE;
