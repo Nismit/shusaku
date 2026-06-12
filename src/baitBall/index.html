@@ -3,14 +3,195 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bait Ball</title>
+  <title>Bait Ball — Shusaku</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
-    * { margin: 0; padding: 0; }
-    body { overflow: hidden; background: #000; }
+    :root {
+      --dock-bg: 20, 20, 24;
+      --dock-alpha: 0.72;
+      --dock-fg: 245, 245, 248;
+      --dock-border: rgba(255, 255, 255, 0.20);
+      --dock-h: 46px;
+      --dock-radius: 2px;
+      --ui-pad: clamp(18px, 3vw, 34px);
+      --ui-fs: clamp(12px, 1.05vw, 13.5px);
+      --ui-track: 0.01em;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      overflow: hidden;
+      background: #000;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
     canvas { display: block; }
+
+    #ui { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+
+    .dock {
+      position: absolute;
+      bottom: var(--ui-pad);
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: stretch;
+      max-width: calc(100vw - 2 * var(--ui-pad));
+      overflow: hidden;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .dock { animation: dock-in .6s cubic-bezier(.22,.61,.36,1) both; }
+    }
+    @keyframes dock-in {
+      from { opacity: 0; transform: translate(-50%, 10px); }
+    }
+    @media print {
+      .dock { animation: none !important; opacity: 1 !important; transform: translateX(-50%) !important; }
+    }
+
+    .surface {
+      background: rgba(var(--dock-bg), var(--dock-alpha));
+      border: 1px solid var(--dock-border);
+      border-radius: var(--dock-radius);
+      -webkit-backdrop-filter: blur(9px) saturate(1.1);
+      backdrop-filter: blur(9px) saturate(1.1);
+      box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.32),
+        0 4px 14px rgba(0, 0, 0, 0.42);
+    }
+
+    .dock-back {
+      pointer-events: auto;
+      width: var(--dock-h);
+      height: var(--dock-h);
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      color: rgba(var(--dock-fg), 0.82);
+      text-decoration: none;
+      border-right: 1px solid var(--dock-border);
+      transition: color .3s ease, background-color .3s ease;
+    }
+    .dock-back:hover {
+      color: rgba(var(--dock-fg), 1);
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .dock-back svg {
+      width: 19px; height: 19px;
+      transition: transform .35s cubic-bezier(.22,.61,.36,1);
+    }
+    .dock-back:hover svg { transform: translateX(-2px); }
+
+    .dock-bar {
+      height: var(--dock-h);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 7px 0 18px;
+      min-width: 0;
+    }
+    .dock-title {
+      font-size: var(--ui-fs);
+      font-weight: 500;
+      letter-spacing: var(--ui-track);
+      color: rgba(var(--dock-fg), 0.92);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .dock-sep {
+      flex: 0 0 auto;
+      width: 1px;
+      height: 20px;
+      background: rgba(255, 255, 255, 0.12);
+      margin-left: auto;
+    }
+    .dock-icon {
+      pointer-events: auto;
+      flex: 0 0 auto;
+      width: calc(var(--dock-h) - 14px);
+      height: calc(var(--dock-h) - 14px);
+      border-radius: 4px;
+      display: grid;
+      place-items: center;
+      color: rgba(var(--dock-fg), 0.68);
+      text-decoration: none;
+      transition: color .3s ease, background-color .3s ease;
+    }
+    .dock-icon:hover {
+      color: #208bfe;
+      background: rgba(255, 255, 255, 0.07);
+    }
+    .dock-icon svg { width: 18px; height: 16px; display: block; }
+
+    .author {
+      position: absolute;
+      left: var(--ui-pad);
+      bottom: var(--ui-pad);
+      pointer-events: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: rgba(var(--dock-fg), 0.42);
+      transition: color .3s ease;
+    }
+    .author:hover { color: rgba(var(--dock-fg), 0.85); }
+    .author::after {
+      content: "";
+      width: 1px;
+      height: 22px;
+      background: currentColor;
+      opacity: 0.55;
+    }
+    .author span {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      transform: rotate(180deg);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+    @media (pointer: coarse) {
+      .author span { font-size: 12px; }
+    }
+
+    @media (pointer: coarse) {
+      :root { --dock-h: 52px; --ui-fs: 13.5px; }
+    }
+    @media (max-width: 480px) {
+      .dock-title { max-width: 46vw; }
+    }
   </style>
 </head>
 <body>
+  <div id="ui">
+    <a class="author" href="https://bsky.app/profile/nismit.bsky.social" target="_blank" rel="noopener" aria-label="@nismit">
+      <span>@nismit</span>
+    </a>
+    <nav class="dock surface" aria-label="Artwork controls">
+      <a class="dock-back" href="/" aria-label="Back to index">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="11 18 5 12 11 6"></polyline>
+        </svg>
+      </a>
+      <div class="dock-bar">
+        <span class="dock-title">Bait Ball</span>
+        <span class="dock-sep" aria-hidden="true"></span>
+        <a class="dock-icon" href="https://bsky.app/profile/nismit.bsky.social" target="_blank" rel="noopener" aria-label="Bluesky">
+          <svg viewBox="0 0 600 530" fill="currentColor" aria-hidden="true">
+            <path d="M135.72 44.03C202.216 93.951 273.74 195.17 300 249.49c26.262-54.316 97.782-155.54 164.28-205.46C512.26 8.009 590-19.862 590 68.825c0 17.712-10.155 148.79-16.111 170.07-20.703 73.984-96.144 92.854-163.25 81.433 117.3 19.964 147.14 86.092 82.697 152.22-122.39 125.59-175.91-31.511-189.63-71.766-2.514-7.38-3.69-10.832-3.708-7.896-.017-2.936-1.193.516-3.707 7.896-13.714 40.255-67.233 197.36-189.63 71.766-64.444-66.128-34.605-132.26 82.697-152.22-67.108 11.421-142.55-7.449-163.25-81.433C16.155 217.61 6 86.536 6 68.825c0-88.687 77.742-60.816 135.72-24.795z"></path>
+          </svg>
+        </a>
+      </div>
+    </nav>
+  </div>
+
   <script type="module">
     import { main } from './main.js';
     main();
