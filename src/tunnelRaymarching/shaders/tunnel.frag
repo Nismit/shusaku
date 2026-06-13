@@ -21,6 +21,8 @@ uniform int iStyle;
 #define TAU 6.28318530718
 #define NUM_ORBS 1
 #define NUM_CABLES 4
+#define RING_SPACING 2.5
+#define CONNECTOR_SPACING 8.0
 
 // Tunnel path function
 vec2 path(float z) {
@@ -106,34 +108,91 @@ float cableDist(vec3 p, int cableIndex) {
   return length(p.xy - cablePos.xy) - 0.025; // Cable radius
 }
 
+// Distance to cable ring with early z-bound check
+float cableRingDist(vec3 p, int cableIndex, float idx) {
+  float phase = hash(idx * 61.0) * RING_SPACING;
+  float ringZ = floor((p.z + phase) / RING_SPACING) * RING_SPACING - phase;
+
+  // Early exit if far from ring z-position
+  float zDist = abs(p.z - ringZ);
+  if (zDist > 0.15) return 1e10;
+
+  vec3 cablePos = getCablePosition(cableIndex, ringZ);
+  vec3 local = p - vec3(cablePos.xy, ringZ);
+
+  float majorR = 0.045;
+  float minorR = 0.012;
+  vec2 q = vec2(length(local.xy) - majorR, local.z);
+  return length(q) - minorR;
+}
+
+// Distance to cable connector with early z-bound check
+float cableConnectorDist(vec3 p, int cableIndex, float idx) {
+  float phase = hash(idx * 89.0) * CONNECTOR_SPACING;
+  float connZ = floor((p.z + phase) / CONNECTOR_SPACING) * CONNECTOR_SPACING - phase;
+
+  // Early exit if far from connector z-position
+  float zDist = abs(p.z - connZ);
+  if (zDist > 0.15) return 1e10;
+
+  vec3 cablePos = getCablePosition(cableIndex, connZ);
+  vec3 local = p - vec3(cablePos.xy, connZ);
+
+  vec3 boxSize = vec3(0.05, 0.05, 0.06);
+  vec3 q = abs(local) - boxSize;
+  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - 0.01;
+}
+
 // Combined distance function
 float mapTunnel(vec3 p) {
   vec2 tun = p.xy - path(p.z);
   return iTunnelRadius - length(tun);
 }
 
-float mapCables(vec3 p) {
-  float d = 1e10;
+// Combined cable geometry distance - single loop for all cable elements
+vec4 mapAllCables(vec3 p) {
+  float dCable = 1e10;
+  float dRing = 1e10;
+  float dConn = 1e10;
+
   for (int i = 0; i < NUM_CABLES; i++) {
-    d = min(d, cableDist(p, i));
+    float idx = float(i);
+    dCable = min(dCable, cableDist(p, i));
+    dRing = min(dRing, cableRingDist(p, i, idx));
+    dConn = min(dConn, cableConnectorDist(p, i, idx));
   }
-  return d;
+
+  float minDist = min(min(dCable, dRing), dConn);
+  return vec4(minDist, dCable, dRing, dConn);
 }
 
 float map(vec3 p) {
   float tunnel = mapTunnel(p);
-  float cables = mapCables(p);
-  return min(tunnel, cables);
+  vec4 cables = mapAllCables(p);
+  return min(tunnel, cables.x);
 }
 
-// Surface normal
+// Returns: 0 = nothing, 1 = cable, 2 = ring, 3 = connector
+int getCableHitType(vec3 p) {
+  vec4 cables = mapAllCables(p);
+  float threshold = 0.015;
+
+  if (cables.w < threshold) return 3;  // connector
+  if (cables.z < threshold) return 2;  // ring
+  if (cables.y < threshold) return 1;  // cable
+  return 0;
+}
+
+// Surface normal - tetrahedron technique (4 samples instead of 6)
 vec3 getNormal(vec3 p) {
   const float eps = 0.001;
-  return normalize(vec3(
-    map(vec3(p.x + eps, p.y, p.z)) - map(vec3(p.x - eps, p.y, p.z)),
-    map(vec3(p.x, p.y + eps, p.z)) - map(vec3(p.x, p.y - eps, p.z)),
-    map(vec3(p.x, p.y, p.z + eps)) - map(vec3(p.x, p.y, p.z - eps))
-  ));
+  const vec2 k = vec2(1.0, -1.0);
+  return normalize(
+    k.xyy * map(p + k.xyy * eps) +
+    k.yyx * map(p + k.yyx * eps) +
+    k.yxy * map(p + k.yxy * eps) +
+    k.xxx * map(p + k.xxx * eps)
+  );
 }
 
 // Calculate GI-like lighting from orbs
@@ -234,9 +293,9 @@ vec3 calcCableGI(vec3 surfacePos, vec3 surfaceNormal, float time) {
   return totalLight;
 }
 
-// Check if we hit a cable
+// Check if we hit any cable geometry
 bool isCableHit(vec3 p) {
-  return mapCables(p) < 0.01;
+  return getCableHitType(p) > 0;
 }
 
 // Value noise
@@ -564,10 +623,10 @@ void main() {
   float t = 0.0;
   float dt;
 
-  for (int i = 0; i < 128; i++) {
+  for (int i = 0; i < 96; i++) {
     dt = map(camPos + rd * t);
-    if (dt < 0.002 || t > 150.0) break;
-    t += dt * 0.75;
+    if (dt < 0.002 || t > 120.0) break;
+    t += dt * 0.8;
   }
 
   vec3 col = vec3(0.0);
@@ -581,20 +640,46 @@ void main() {
     bool hitCable = isCableHit(sp);
 
     if (hitCable) {
-      // Render cable surface
+      // Render cable geometry
       vec3 cableGlow = calcCableGlow(sp, time);
       vec3 cableGI = calcCableGI(sp, sn, time);
       vec3 orbLight = calcOrbLighting(sp, sn, time);
 
-      // Base cable color (darker metallic)
-      vec3 cableBase = vec3(0.04, 0.05, 0.06);
-      float diff = max(dot(sn, -rd), 0.0) * 0.3 + 0.3;
+      int hitType = getCableHitType(sp);
 
       // Depth fog
       float depth = t / 60.0;
       float fog = exp(-depth * depth * 0.6);
 
-      col = cableBase * diff + cableGlow * 2.0 + orbLight * 0.3 + cableGI * 0.1;
+      float diff = max(dot(sn, -rd), 0.0) * 0.3 + 0.3;
+      float rim = pow(1.0 - abs(dot(sn, rd)), 3.0);
+
+      if (hitType == 3) {
+        // Connector - dark metallic box with indicator light
+        vec3 connBase = vec3(0.02, 0.02, 0.025);
+        vec3 connHighlight = vec3(0.05, 0.05, 0.06);
+
+        // Pulsing indicator light on connector
+        float pulse = sin(time * 3.0 + sp.z * 0.5) * 0.5 + 0.5;
+        vec3 indicatorColor = mix(vec3(0.1, 0.4, 0.8), vec3(0.2, 0.8, 1.0), pulse);
+
+        col = mix(connBase, connHighlight, diff + rim * 0.3);
+        col += indicatorColor * pulse * 0.3;
+        col += cableGlow * 0.5 + orbLight * 0.15 + cableGI * 0.05;
+      } else if (hitType == 2) {
+        // Ring - shiny metallic
+        vec3 ringBase = vec3(0.12, 0.14, 0.18);
+        vec3 ringHighlight = vec3(0.3, 0.35, 0.45);
+
+        float spec = pow(max(dot(reflect(rd, sn), -rd), 0.0), 32.0);
+        col = mix(ringBase, ringHighlight, diff) + vec3(0.5) * spec * 0.3;
+        col += cableGlow * 1.2 + orbLight * 0.2 + cableGI * 0.08;
+      } else {
+        // Cable - base with energy glow
+        vec3 cableBase = vec3(0.04, 0.05, 0.06);
+        col = cableBase * diff + cableGlow * 2.0 + orbLight * 0.3 + cableGI * 0.1;
+      }
+
       col *= fog;
     } else {
       // Calculate orb GI lighting
