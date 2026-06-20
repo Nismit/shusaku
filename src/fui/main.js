@@ -28,7 +28,7 @@ export const main = () => {
   const cursorShader = cgl.createShader({ fragment: cursorFrag });
   const gaugeShader = cgl.createShader({ fragment: gaugeFrag });
 
-  const fpsGraph = new FPSGraph(cgl, canvas);
+  const fpsGraph = new FPSGraph();
 
   // Font state
   const fontState = {
@@ -304,20 +304,8 @@ export const main = () => {
     renderText(`TIME ${elapsed}s`, padding, y, baseFontSize, primary);
     y += lineHeight;
 
-    // FPS graph (bottom-left)
+    // Resolution / frame count (top-right)
     {
-      const graphWidth = baseFontSize * 8;
-      const graphHeight = baseFontSize * 1.2;
-      const graphX = padding;
-      const graphY = canvas.height - padding - graphHeight;
-
-      fpsGraph.render({
-        x: graphX, y: graphY,
-        width: graphWidth, height: graphHeight,
-        lineColor: [0, 0, 0, 0.7],
-        bgColor:   [0.9, 0.9, 0.9, 0.5],
-      });
-
       const smallFont = baseFontSize * 0.6;
       const fText = `F ${frameCount}`;
       const resText = `${canvas.width}x${canvas.height}`;

@@ -1,95 +1,121 @@
-import graphFrag from '../fui/shaders/graph.frag?raw';
-
 /**
- * FPSGraph - WebGL FPS line-graph overlay using fui's graph.frag shader.
+ * FPSGraph - 2D canvas overlay FPS monitor with transparent background.
  *
- * Accepts the chottoGL instance so it renders into the same WebGL canvas.
- * Call tick() once per animation frame to sample, then render() to draw.
+ * Renders a scrolling line-graph consistent with the FUI black-on-white
+ * aesthetic.  Background is fully transparent (clearRect); the black line
+ * and fill sit directly on whatever is behind the canvas.
  *
- * Usage (inside a page that already has a cgl / WebGL canvas):
+ * Call tick() once per animation frame — drawing happens automatically.
+ *
+ * Usage:
  *   import { FPSGraph } from '../libs/FPSGraph.js';
- *   const fpsGraph = new FPSGraph(cgl, canvas);
+ *   const fpsGraph = new FPSGraph();
  *   // inside render loop:
  *   fpsGraph.tick();
- *   fpsGraph.render({ x, y, width, height });
  */
 export class FPSGraph {
-  constructor(cgl, canvas, { samples = 120, minFps = 50, maxFps = 70 } = {}) {
-    this.cgl = cgl;
-    this.canvas = canvas;
+  constructor({
+    samples = 120,
+    minFps  = 50,
+    maxFps  = 70,
+    width   = 120,
+    height  = 30,
+    bottom  = 40,
+    left    = 40,
+  } = {}) {
     this.samples = samples;
-    this.minFps = minFps;
-    this.maxFps = maxFps;
-
-    this.buf = new Float32Array(samples);
-    this.ptr = 0;
-    this.filled = false;
-    this.last = performance.now();
+    this.minFps  = minFps;
+    this.maxFps  = maxFps;
+    this.width   = width;
+    this.height  = height;
+    this.buf     = new Float32Array(samples);
+    this.ptr     = 0;
+    this.filled  = false;
+    this.last    = performance.now();
     this.current = 0;
 
-    this.shader = cgl.createShader({ fragment: graphFrag });
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const el  = document.createElement('canvas');
+    el.width  = width  * dpr;
+    el.height = height * dpr;
+    el.style.cssText =
+      `position:fixed;bottom:${bottom}px;left:${left}px;` +
+      `width:${width}px;height:${height}px;z-index:20;pointer-events:none`;
+    document.body.appendChild(el);
+
+    const ctx = el.getContext('2d');
+    ctx.scale(dpr, dpr);
+    this.ctx = ctx;
+    this.el  = el;
   }
 
   tick() {
     const now = performance.now();
-    const dt = now - this.last;
+    const dt  = now - this.last;
     this.last = now;
-    const fps = dt > 0 ? 1000 / dt : 0;
+
+    const fps    = dt > 0 ? 1000 / dt : 0;
     this.current = fps;
     this.buf[this.ptr] = fps;
     this.ptr = (this.ptr + 1) % this.samples;
     if (this.ptr === 0) this.filled = true;
+
+    this._draw();
     return fps;
   }
 
-  /** Returns ordered history array (oldest → newest). */
-  getHistory() {
-    const count = this.filled ? this.samples : this.ptr;
-    const out = new Float32Array(count);
+  _draw() {
+    const { ctx, width, height, buf, samples, ptr, filled, minFps, maxFps } = this;
+
+    // Transparent background
+    ctx.clearRect(0, 0, width, height);
+
+    const count = filled ? samples : ptr;
+    if (count < 2) return;
+
+    const labelH = 12;
+    const plotH  = height - labelH;
+    const range  = maxFps - minFps;
+    const norm   = v => Math.max(0, Math.min(1, (v - minFps) / range));
+
+    // Build ordered value array (oldest → newest)
+    const vals = [];
     for (let i = 0; i < count; i++) {
-      out[i] = this.buf[this.filled ? (this.ptr + i) % this.samples : i];
+      vals.push(buf[filled ? (ptr + i) % samples : i]);
     }
-    return out;
+
+    // Fill area below line
+    ctx.beginPath();
+    for (let i = 0; i < vals.length; i++) {
+      const x = (i / (vals.length - 1)) * width;
+      const y = labelH + plotH * (1 - norm(vals[i]));
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.lineTo(width, labelH + plotH);
+    ctx.lineTo(0,     labelH + plotH);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(0,0,0,0.06)';
+    ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    for (let i = 0; i < vals.length; i++) {
+      const x = (i / (vals.length - 1)) * width;
+      const y = labelH + plotH * (1 - norm(vals[i]));
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.lineWidth   = 1.5;
+    ctx.lineJoin    = 'round';
+    ctx.stroke();
+
+    // FPS label
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.font      = '10px monospace';
+    ctx.fillText(`${Math.round(this.current)} fps`, 0, 10);
   }
 
-  /**
-   * Render the graph into the WebGL canvas.
-   * @param {object} opts
-   * @param {number} opts.x           Left edge in physical pixels
-   * @param {number} opts.y           Bottom edge in physical pixels (WebGL origin)
-   * @param {number} opts.width       Width in physical pixels
-   * @param {number} opts.height      Height in physical pixels
-   * @param {number[]} opts.lineColor RGBA 0-1 line colour (default: dark monochrome)
-   * @param {number[]} opts.bgColor   RGBA 0-1 background colour (default: light semi-transparent)
-   */
-  render({
-    x, y, width, height,
-    lineColor = [0, 0, 0, 0.7],
-    bgColor   = [0.9, 0.9, 0.9, 0.5],
-  } = {}) {
-    const history = this.getHistory();
-    if (history.length < 2) return;
-
-    const { minFps, maxFps, canvas } = this;
-    const range = maxFps - minFps;
-
-    // Normalize into 0-1 clamped to the FPS window
-    const normalized = new Float32Array(128);
-    const count = Math.min(history.length, 128);
-    for (let i = 0; i < count; i++) {
-      normalized[i] = range > 0
-        ? Math.max(0, Math.min(1, (history[i] - minFps) / range))
-        : 0.5;
-    }
-
-    this.cgl.pass(this.shader, {
-      uResolution:  [canvas.width, canvas.height],
-      uRect:        [x, y, width, height],
-      uValues:      normalized,
-      uValueCount:  count,
-      uLineColor:   lineColor,
-      uBgColor:     bgColor,
-      uLineWidth:   2.0,
-    });
+  destroy() {
+    this.el.remove();
   }
 }
