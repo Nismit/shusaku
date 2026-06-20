@@ -1,70 +1,95 @@
+import graphFrag from '../fui/shaders/graph.frag?raw';
+
 /**
- * FPSGraph - Lightweight overlay for monitoring frame rate.
+ * FPSGraph - WebGL FPS line-graph overlay using fui's graph.frag shader.
  *
- * Renders a scrolling bar chart of recent FPS samples on a 2D canvas with
- * a transparent background.  Call tick() once per animation frame.
+ * Accepts the chottoGL instance so it renders into the same WebGL canvas.
+ * Call tick() once per animation frame to sample, then render() to draw.
  *
- * Usage:
+ * Usage (inside a page that already has a cgl / WebGL canvas):
  *   import { FPSGraph } from '../libs/FPSGraph.js';
- *   const fps = new FPSGraph();
+ *   const fpsGraph = new FPSGraph(cgl, canvas);
  *   // inside render loop:
- *   fps.tick();
+ *   fpsGraph.tick();
+ *   fpsGraph.render({ x, y, width, height });
  */
 export class FPSGraph {
-  constructor({ samples = 80, width = 100, height = 36 } = {}) {
+  constructor(cgl, canvas, { samples = 120, minFps = 50, maxFps = 70 } = {}) {
+    this.cgl = cgl;
+    this.canvas = canvas;
     this.samples = samples;
-    this.width = width;
-    this.height = height;
+    this.minFps = minFps;
+    this.maxFps = maxFps;
+
     this.buf = new Float32Array(samples);
     this.ptr = 0;
+    this.filled = false;
     this.last = performance.now();
+    this.current = 0;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const el = document.createElement('canvas');
-    el.width = width * dpr;
-    el.height = height * dpr;
-    el.style.cssText =
-      `position:fixed;top:8px;left:8px;width:${width}px;height:${height}px;` +
-      `z-index:20;pointer-events:none`;
-    document.body.appendChild(el);
-
-    const ctx = el.getContext('2d');
-    ctx.scale(dpr, dpr);
-    this.ctx = ctx;
-    this.el = el;
+    this.shader = cgl.createShader({ fragment: graphFrag });
   }
 
   tick() {
     const now = performance.now();
     const dt = now - this.last;
-    const fps = dt > 0 ? 1000 / dt : 0;
     this.last = now;
+    const fps = dt > 0 ? 1000 / dt : 0;
+    this.current = fps;
     this.buf[this.ptr] = fps;
     this.ptr = (this.ptr + 1) % this.samples;
-    this._draw(fps);
+    if (this.ptr === 0) this.filled = true;
+    return fps;
   }
 
-  _draw(current) {
-    const { ctx, width, height, buf, samples, ptr } = this;
-    ctx.clearRect(0, 0, width, height);
+  /** Returns ordered history array (oldest → newest). */
+  getHistory() {
+    const count = this.filled ? this.samples : this.ptr;
+    const out = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      out[i] = this.buf[this.filled ? (this.ptr + i) % this.samples : i];
+    }
+    return out;
+  }
 
-    const barW = width / samples;
-    const plotH = height - 14;
+  /**
+   * Render the graph into the WebGL canvas.
+   * @param {object} opts
+   * @param {number} opts.x           Left edge in physical pixels
+   * @param {number} opts.y           Bottom edge in physical pixels (WebGL origin)
+   * @param {number} opts.width       Width in physical pixels
+   * @param {number} opts.height      Height in physical pixels
+   * @param {number[]} opts.lineColor RGBA 0-1 line colour (default: dark monochrome)
+   * @param {number[]} opts.bgColor   RGBA 0-1 background colour (default: light semi-transparent)
+   */
+  render({
+    x, y, width, height,
+    lineColor = [0, 0, 0, 0.7],
+    bgColor   = [0.9, 0.9, 0.9, 0.5],
+  } = {}) {
+    const history = this.getHistory();
+    if (history.length < 2) return;
 
-    for (let i = 0; i < samples; i++) {
-      const v = buf[(ptr + i) % samples];
-      const ratio = Math.min(v / 60, 1);
-      const bh = ratio * plotH;
-      ctx.fillStyle = v >= 55 ? '#4ade80' : v >= 30 ? '#facc15' : '#f87171';
-      ctx.fillRect(i * barW, height - bh, barW - 0.5, bh);
+    const { minFps, maxFps, canvas } = this;
+    const range = maxFps - minFps;
+
+    // Normalize into 0-1 clamped to the FPS window
+    const normalized = new Float32Array(128);
+    const count = Math.min(history.length, 128);
+    for (let i = 0; i < count; i++) {
+      normalized[i] = range > 0
+        ? Math.max(0, Math.min(1, (history[i] - minFps) / range))
+        : 0.5;
     }
 
-    ctx.fillStyle = 'rgba(245,245,248,0.9)';
-    ctx.font = '10px monospace';
-    ctx.fillText(`${Math.round(current)} fps`, 2, 10);
-  }
-
-  destroy() {
-    this.el.remove();
+    this.cgl.pass(this.shader, {
+      uResolution:  [canvas.width, canvas.height],
+      uRect:        [x, y, width, height],
+      uValues:      normalized,
+      uValueCount:  count,
+      uLineColor:   lineColor,
+      uBgColor:     bgColor,
+      uLineWidth:   2.0,
+    });
   }
 }

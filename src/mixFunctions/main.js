@@ -1,7 +1,6 @@
 import { chottoGL } from '../libs/esChottoGL.js';
 import { Timer } from '../libs/Timer.js';
 import GUI from '../libs/lil-gui.esm.min.js';
-import { FPSGraph } from '../libs/FPSGraph.js';
 
 import mainFragment from './shaders/main.frag?raw';
 
@@ -240,12 +239,10 @@ export const main = () => {
 
   window.addEventListener('resize', () => { prevLabelKey = ''; });
 
-  const fpsGraph = new FPSGraph();
 
   // ---- Render loop ----
 
   const render = () => {
-    fpsGraph.tick();
     const time = timer.getElapsedTime();
 
     // Animate gap: faster to expand, slightly slower to contract

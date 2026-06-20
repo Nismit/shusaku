@@ -1,7 +1,6 @@
 import { chottoGL } from '../libs/esChottoGL.js';
 import { PointerInput } from '../libs/PointerInput.js';
 import GUI from '../libs/lil-gui.esm.min.js';
-import { FPSGraph } from '../libs/FPSGraph.js';
 
 import advectionFrag from './shaders/advection.frag?raw';
 import splatFrag from './shaders/splat.frag?raw';
@@ -741,11 +740,9 @@ export const main = () => {
 
   gui.close();
 
-  const fpsGraph = new FPSGraph();
   let lastTime = performance.now();
 
   const render = () => {
-    fpsGraph.tick();
     const now = performance.now();
     const dt = Math.min((now - lastTime) / 1000, 1 / 30);
     lastTime = now;

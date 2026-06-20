@@ -1,7 +1,7 @@
 import { chottoGL } from '../libs/esChottoGL.js';
 import { MultiTouchInput } from './MultiTouchInput.js';
+import { FPSGraph } from '../libs/FPSGraph.js';
 import msdfTextFrag from './shaders/msdfText.frag?raw';
-import graphFrag from './shaders/graph.frag?raw';
 import cursorFrag from './shaders/cursor.frag?raw';
 import gaugeFrag from './shaders/gauge.frag?raw';
 
@@ -25,9 +25,10 @@ export const main = () => {
   window.addEventListener('resize', applySize);
 
   const msdfTextShader = cgl.createShader({ fragment: msdfTextFrag });
-  const graphShader = cgl.createShader({ fragment: graphFrag });
   const cursorShader = cgl.createShader({ fragment: cursorFrag });
   const gaugeShader = cgl.createShader({ fragment: gaugeFrag });
+
+  const fpsGraph = new FPSGraph(cgl, canvas);
 
   // Font state
   const fontState = {
@@ -197,56 +198,6 @@ export const main = () => {
 
   // Stats
   let frameCount = 0;
-  let fps = 0;
-  let lastFpsTime = performance.now();
-
-  // FPS history for graph (ring buffer)
-  const FPS_HISTORY_SIZE = 120;
-  const fpsHistory = new Float32Array(FPS_HISTORY_SIZE);
-  let fpsHistoryIndex = 0;
-  let fpsHistoryFilled = false;
-
-  const pushFpsHistory = (value) => {
-    fpsHistory[fpsHistoryIndex] = value;
-    fpsHistoryIndex = (fpsHistoryIndex + 1) % FPS_HISTORY_SIZE;
-    if (fpsHistoryIndex === 0) fpsHistoryFilled = true;
-  };
-
-  // Get ordered history (oldest to newest)
-  const getOrderedFpsHistory = () => {
-    const count = fpsHistoryFilled ? FPS_HISTORY_SIZE : fpsHistoryIndex;
-    const result = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      const idx = fpsHistoryFilled
-        ? (fpsHistoryIndex + i) % FPS_HISTORY_SIZE
-        : i;
-      result[i] = fpsHistory[idx];
-    }
-    return result;
-  };
-
-  // Graph rendering
-  const renderGraph = (x, y, width, height, values, minVal, maxVal, lineColor, bgColor = [0, 0, 0, 0.3]) => {
-    if (values.length < 2) return;
-
-    // Normalize values to 0-1
-    const range = maxVal - minVal;
-    const normalized = new Float32Array(128);
-    const count = Math.min(values.length, 128);
-    for (let i = 0; i < count; i++) {
-      normalized[i] = range > 0 ? (values[i] - minVal) / range : 0.5;
-    }
-
-    cgl.pass(graphShader, {
-      uResolution: [canvas.width, canvas.height],
-      uRect: [x, y, width, height],
-      uValues: normalized,
-      uValueCount: count,
-      uLineColor: lineColor,
-      uBgColor: bgColor,
-      uLineWidth: 2.0,
-    });
-  };
 
   // Text rendering helpers
   const measureTextWidth = (text, fontSize) => {
@@ -325,14 +276,7 @@ export const main = () => {
   const render = () => {
     const now = performance.now();
     frameCount++;
-
-    // FPS calculation (per frame)
-    const dt = now - lastFpsTime;
-    if (dt > 0) {
-      fps = 1000 / dt;
-      pushFpsHistory(fps);
-    }
-    lastFpsTime = now;
+    fpsGraph.tick();
 
     cgl.clear(1.0, 1.0, 1.0, 1.0);
 
@@ -367,10 +311,12 @@ export const main = () => {
       const graphX = padding;
       const graphY = canvas.height - padding - graphHeight;
 
-      const history = getOrderedFpsHistory();
-      if (history.length > 1) {
-        renderGraph(graphX, graphY, graphWidth, graphHeight, history, 50, 70, [0, 0, 0, 0.7], [0.9, 0.9, 0.9, 0.5]);
-      }
+      fpsGraph.render({
+        x: graphX, y: graphY,
+        width: graphWidth, height: graphHeight,
+        lineColor: [0, 0, 0, 0.7],
+        bgColor:   [0.9, 0.9, 0.9, 0.5],
+      });
 
       const smallFont = baseFontSize * 0.6;
       const fText = `F ${frameCount}`;
