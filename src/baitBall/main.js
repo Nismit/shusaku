@@ -2,6 +2,7 @@ import { chottoGL } from '../libs/esChottoGL.js';
 import { Timer } from '../libs/Timer.js';
 import { PointerInput } from '../libs/PointerInput.js';
 import GUI from '../libs/lil-gui.esm.min.js';
+import { FPSGraph } from '../libs/FPSGraph.js';
 
 import initFrag from './shaders/init.frag?raw';
 import updateFrag from './shaders/update.frag?raw';
@@ -543,6 +544,8 @@ void main() {
   gui.close();
   gui.hide();
 
+  const fpsGraph = new FPSGraph();
+
   // --- Resize ---
   const onResize = () => {
     const w = window.innerWidth;
@@ -562,6 +565,7 @@ void main() {
 
   // --- Render loop ---
   const render = () => {
+    fpsGraph.tick();
     const time = timer.getElapsedTime();
 
     // === Update mouse world position ===

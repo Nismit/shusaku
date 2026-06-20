@@ -1,6 +1,7 @@
 import { chottoGL } from '../libs/esChottoGL.js';
 import { Timer } from '../libs/Timer.js';
 import GUI from '../libs/lil-gui.esm.min.js';
+import { FPSGraph } from '../libs/FPSGraph.js';
 
 import tunnelFrag from './shaders/tunnel.frag?raw';
 
@@ -95,6 +96,8 @@ export const main = () => {
   pathFolder.close();
 
   gui.close();
+
+  const fpsGraph = new FPSGraph();
 
   // --- Timer controls ---
   let isPlaying = true;
@@ -194,6 +197,7 @@ export const main = () => {
 
   // --- Render loop ---
   const render = () => {
+    fpsGraph.tick();
     const time = timer.getElapsedTime();
 
     shader.use();

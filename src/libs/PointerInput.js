@@ -69,6 +69,13 @@ export class PointerInput {
     this.prevPixelX = 0;
     this.prevPixelY = 0;
     this.prevTime = performance.now();
+
+    // Cached bounding rect — updated on resize to avoid per-event layout reflow
+    this._rect = canvas.getBoundingClientRect();
+    this._resizeObserver = new ResizeObserver(() => {
+      this._rect = canvas.getBoundingClientRect();
+    });
+    this._resizeObserver.observe(canvas);
     
     // Callbacks
     this.callbacks = {
@@ -143,39 +150,39 @@ export class PointerInput {
    * @private
    */
   _updateNormalizedPosition() {
-    const rect = this.canvas.getBoundingClientRect();
+    const { _rect: rect } = this;
     this.state.normalizedX = (this.state.pixelX / rect.width) * 2 - 1;
     this.state.normalizedY = -((this.state.pixelY / rect.height) * 2 - 1);
   }
-  
+
   /**
    * Update velocity
    * @private
    */
   _updateVelocity() {
     if (!this.options.trackVelocity) return;
-    
+
     const currentTime = performance.now();
-    const deltaTime = Math.max(currentTime - this.prevTime, 1); // Prevent division by zero
-    
-    this.state.velocityX = (this.state.pixelX - this.prevPixelX) / deltaTime * 16.67; // Normalize to 60fps standard
+    const deltaTime = Math.max(currentTime - this.prevTime, 1);
+
+    this.state.velocityX = (this.state.pixelX - this.prevPixelX) / deltaTime * 16.67;
     this.state.velocityY = (this.state.pixelY - this.prevPixelY) / deltaTime * 16.67;
-    
-    const rect = this.canvas.getBoundingClientRect();
+
+    const { _rect: rect } = this;
     this.state.normalizedVelocityX = this.state.velocityX / rect.width * 2;
     this.state.normalizedVelocityY = -this.state.velocityY / rect.height * 2;
-    
+
     this.prevPixelX = this.state.pixelX;
     this.prevPixelY = this.state.pixelY;
     this.prevTime = currentTime;
   }
-  
+
   /**
    * Update position (common processing)
    * @private
    */
   _updatePosition(clientX, clientY) {
-    const rect = this.canvas.getBoundingClientRect();
+    const rect = this._rect;
     this.state.pixelX = clientX - rect.left;
     this.state.pixelY = clientY - rect.top;
     this._updateNormalizedPosition();
@@ -488,6 +495,7 @@ export class PointerInput {
    */
   destroy() {
     this._removeEventListeners();
+    this._resizeObserver.disconnect();
     this.canvas = null;
     this.callbacks = {};
   }
