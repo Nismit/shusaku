@@ -94,14 +94,35 @@ void main() {
   }
 
   // Touch ring circles
-  for (int i = 0; i < 5; i++) {
-    if (i >= uTouchCount) break;
-    float op = uTouchOpacity[i];
-    if (op < 0.001) continue;
+  // Manually unrolled (no loop) so mobile GPU compilers cannot unroll to
+  // worst-case 5 iterations; outer guard skips the block entirely when idle.
+  if (uTouchCount > 0) {
+    float dist, a;
 
-    float dist = abs(length(px - uTouchPos[i]) - uCircleRadius);
-    float a = smoothstep(ht + 1.0, ht - 1.0, dist);
-    color = max(color, vec4(uColor.rgb, uColor.a * a * op));
+    dist = abs(length(px - uTouchPos[0]) - uCircleRadius);
+    a = smoothstep(ht + 1.0, ht - 1.0, dist) * uTouchOpacity[0];
+    color = max(color, vec4(uColor.rgb, uColor.a * a));
+
+    if (uTouchCount > 1) {
+      dist = abs(length(px - uTouchPos[1]) - uCircleRadius);
+      a = smoothstep(ht + 1.0, ht - 1.0, dist) * uTouchOpacity[1];
+      color = max(color, vec4(uColor.rgb, uColor.a * a));
+    }
+    if (uTouchCount > 2) {
+      dist = abs(length(px - uTouchPos[2]) - uCircleRadius);
+      a = smoothstep(ht + 1.0, ht - 1.0, dist) * uTouchOpacity[2];
+      color = max(color, vec4(uColor.rgb, uColor.a * a));
+    }
+    if (uTouchCount > 3) {
+      dist = abs(length(px - uTouchPos[3]) - uCircleRadius);
+      a = smoothstep(ht + 1.0, ht - 1.0, dist) * uTouchOpacity[3];
+      color = max(color, vec4(uColor.rgb, uColor.a * a));
+    }
+    if (uTouchCount > 4) {
+      dist = abs(length(px - uTouchPos[4]) - uCircleRadius);
+      a = smoothstep(ht + 1.0, ht - 1.0, dist) * uTouchOpacity[4];
+      color = max(color, vec4(uColor.rgb, uColor.a * a));
+    }
   }
 
   fragColor = color;

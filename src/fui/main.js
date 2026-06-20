@@ -402,7 +402,7 @@ export const main = () => {
           : 1.0 - Math.min((idle - idleThreshold) / fadeDuration, 1.0);
       }
 
-      const touchPointers = input.getPointers().filter(p => p.id !== -1);
+      const touchPointers = pointers.filter(p => p.id !== -1);
       const touchCount = Math.min(touchPointers.length, 5);
       const touchPos = new Float32Array(10);
       const touchOpacity = new Float32Array(5);

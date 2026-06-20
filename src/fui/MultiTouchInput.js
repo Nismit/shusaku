@@ -31,6 +31,12 @@ export class MultiTouchInput {
       touchEnd: this._handleTouchEnd.bind(this),
     };
 
+    this._rect = canvas.getBoundingClientRect();
+    this._resizeObserver = new ResizeObserver(() => {
+      this._rect = canvas.getBoundingClientRect();
+    });
+    this._resizeObserver.observe(canvas);
+
     this._addEventListeners();
   }
 
@@ -61,7 +67,7 @@ export class MultiTouchInput {
   }
 
   _createPointer(id, clientX, clientY, pressure = 0.5) {
-    const rect = this.canvas.getBoundingClientRect();
+    const rect = this._rect;
     const pixelX = clientX - rect.left;
     const pixelY = clientY - rect.top;
     const normalizedX = (pixelX / rect.width) * 2 - 1;
@@ -86,7 +92,7 @@ export class MultiTouchInput {
   }
 
   _updatePointer(pointer, clientX, clientY, pressure = pointer.pressure) {
-    const rect = this.canvas.getBoundingClientRect();
+    const rect = this._rect;
     const now = performance.now();
     const dt = Math.max(now - pointer.lastUpdateTime, 1);
 
@@ -109,7 +115,7 @@ export class MultiTouchInput {
 
   // Mouse handlers
   _handleMouseMove(e) {
-    const rect = this.canvas.getBoundingClientRect();
+    const rect = this._rect;
     this.mousePixelX = e.clientX - rect.left;
     this.mousePixelY = e.clientY - rect.top;
     this.lastMoveTime = performance.now();
@@ -130,7 +136,7 @@ export class MultiTouchInput {
 
   _handleMouseEnter(e) {
     this.mouseInside = true;
-    const rect = this.canvas.getBoundingClientRect();
+    const rect = this._rect;
     this.mousePixelX = e.clientX - rect.left;
     this.mousePixelY = e.clientY - rect.top;
     this.lastMoveTime = performance.now();
@@ -242,6 +248,7 @@ export class MultiTouchInput {
 
   destroy() {
     this._removeEventListeners();
+    this._resizeObserver.disconnect();
     this.pointers.clear();
     this.canvas = null;
   }
