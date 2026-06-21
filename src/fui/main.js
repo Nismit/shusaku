@@ -30,11 +30,6 @@ export const main = () => {
 
   const fpsGraph = new FPSGraph();
 
-  // GPU timer query — measures actual GPU work time per frame.
-  // EXT_disjoint_timer_query_webgl2 is supported on Chrome/Android but not iOS Safari.
-  const gpuExt = gl.getExtension('EXT_disjoint_timer_query_webgl2');
-  let pendingGpuQuery = null;
-
   // Font state
   const fontState = {
     atlas: null,
@@ -283,30 +278,9 @@ export const main = () => {
     frameCount++;
     fpsGraph.tick();
 
-    // Read GPU timer result from the previous frame (results arrive 1 frame late)
-    if (pendingGpuQuery) {
-      if (gl.getQueryParameter(pendingGpuQuery, gl.QUERY_RESULT_AVAILABLE) &&
-          !gl.getParameter(gpuExt.GPU_DISJOINT_EXT)) {
-        fpsGraph.setRenderMs(gl.getQueryParameter(pendingGpuQuery, gl.QUERY_RESULT) / 1e6);
-      }
-      gl.deleteQuery(pendingGpuQuery);
-      pendingGpuQuery = null;
-    }
-
-    // Begin GPU timer for this frame
-    let activeQuery = null;
-    if (gpuExt) {
-      activeQuery = gl.createQuery();
-      gl.beginQuery(gpuExt.TIME_ELAPSED_EXT, activeQuery);
-    }
-
     cgl.clear(1.0, 1.0, 1.0, 1.0);
 
     if (!fontState.ready) {
-      if (activeQuery) {
-        gl.endQuery(gpuExt.TIME_ELAPSED_EXT);
-        pendingGpuQuery = activeQuery;
-      }
       requestAnimationFrame(render);
       return;
     }
@@ -316,9 +290,7 @@ export const main = () => {
 
     const baseFontSize = Math.min(canvas.width, canvas.height) * 0.03;
     const lineHeight = baseFontSize * 1.4;
-    const frameMarginPx = 24 * dpr;
-    const frameArmPx = 40 * dpr;
-    const padding = frameMarginPx + frameArmPx * 0.4;
+    const padding = 16 * dpr;
     let y = padding + baseFontSize;
 
     const primary = [0, 0, 0, 0.9];
@@ -395,12 +367,14 @@ export const main = () => {
     // Device sensors (disabled)
     // if (sensors.permission === 'granted') { ... }
 
-    // Gauges (bottom-right)
+    // Gauge (bottom-left, below FPS graph)
+    // FPS graph: bottom:24px, height:30px → top of graph is 54px from viewport bottom.
+    // Gauge sits below it: bottom:8px from viewport bottom.
     {
       const gaugeW = 120 * dpr;
       const gaugeH = 8 * dpr;
-      const gaugeX = canvas.width - padding - gaugeW;
-      const gaugeY = canvas.height - padding - gaugeH;
+      const gaugeX = 16 * dpr;
+      const gaugeY = canvas.height - 8 * dpr - gaugeH;
       const progress = (now % 10000) / 10000;
 
       cgl.pass(gaugeShader, {
@@ -448,9 +422,6 @@ export const main = () => {
           uMouseOpacity: mouseOpacity,
           uBracketHalf: bracketHalf,
           uCornerLen: 10 * dpr,
-          uFrameMargin: 24 * dpr,
-          uFrameCornerLen: 40 * dpr,
-          uFrameOpacity: 1.0,
           uTouchPos: touchPos,
           uTouchOpacity: touchOpacity,
           uTouchCount: touchCount,
@@ -478,11 +449,6 @@ export const main = () => {
     }
 
     gl.disable(gl.BLEND);
-
-    if (activeQuery) {
-      gl.endQuery(gpuExt.TIME_ELAPSED_EXT);
-      pendingGpuQuery = activeQuery;
-    }
 
     requestAnimationFrame(render);
   };

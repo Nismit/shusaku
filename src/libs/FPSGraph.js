@@ -20,32 +20,27 @@ export class FPSGraph {
     maxFps  = 70,
     width   = 120,
     height  = 30,
-    bottom  = 40,
-    left    = 40,
+    bottom  = 24,
+    left    = 16,
   } = {}) {
-    this.samples  = samples;
-    this.minFps   = minFps;
-    this.maxFps   = maxFps;
-    this.width    = width;
-    this.height   = height;
-    this.buf      = new Float32Array(samples);
-    this.ptr      = 0;
-    this.filled   = false;
-    this.last     = performance.now();
-    this.current  = 0;
-    this.renderMs = 0;
-
-    const msLabelH  = 11;
-    this._msLabelH  = msLabelH;
-    const totalH    = height + msLabelH;
+    this.samples = samples;
+    this.minFps  = minFps;
+    this.maxFps  = maxFps;
+    this.width   = width;
+    this.height  = height;
+    this.buf     = new Float32Array(samples);
+    this.ptr     = 0;
+    this.filled  = false;
+    this.last    = performance.now();
+    this.current = 0;
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const el  = document.createElement('canvas');
-    el.width  = width   * dpr;
-    el.height = totalH  * dpr;
+    el.width  = width  * dpr;
+    el.height = height * dpr;
     el.style.cssText =
       `position:fixed;bottom:${bottom}px;left:${left}px;` +
-      `width:${width}px;height:${totalH}px;z-index:20;pointer-events:none`;
+      `width:${width}px;height:${height}px;z-index:20;pointer-events:none`;
     document.body.appendChild(el);
 
     const ctx = el.getContext('2d');
@@ -54,17 +49,13 @@ export class FPSGraph {
     this.el  = el;
   }
 
-  setRenderMs(ms) {
-    this.renderMs = ms;
-  }
-
   tick() {
     const now = performance.now();
     const dt  = now - this.last;
     this.last = now;
 
     const fps    = dt > 0 ? 1000 / dt : 0;
-    this.current  = fps;
+    this.current = fps;
     this.buf[this.ptr] = fps;
     this.ptr = (this.ptr + 1) % this.samples;
     if (this.ptr === 0) this.filled = true;
@@ -74,11 +65,9 @@ export class FPSGraph {
   }
 
   _draw() {
-    const { ctx, width, height, buf, samples, ptr, filled, minFps, maxFps, _msLabelH } = this;
-    const totalH = height + _msLabelH;
+    const { ctx, width, height, buf, samples, ptr, filled, minFps, maxFps } = this;
 
-    // Transparent background
-    ctx.clearRect(0, 0, width, totalH);
+    ctx.clearRect(0, 0, width, height);
 
     const count = filled ? samples : ptr;
     if (count < 2) return;
@@ -88,7 +77,6 @@ export class FPSGraph {
     const range  = maxFps - minFps;
     const norm   = v => Math.max(0, Math.min(1, (v - minFps) / range));
 
-    // Build ordered value array (oldest → newest)
     const vals = [];
     for (let i = 0; i < count; i++) {
       vals.push(buf[filled ? (ptr + i) % samples : i]);
@@ -123,12 +111,6 @@ export class FPSGraph {
     ctx.fillStyle = 'rgba(0,0,0,0.7)';
     ctx.font      = '10px monospace';
     ctx.fillText(`${Math.round(this.current)} fps`, 0, 10);
-
-    // GPU render time label below graph
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.font      = '9px monospace';
-    const msText  = this.renderMs > 0 ? `${this.renderMs.toFixed(2)} ms` : '-- ms';
-    ctx.fillText(msText, 0, height + _msLabelH - 1);
   }
 
   destroy() {
