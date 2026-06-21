@@ -64,7 +64,8 @@ export class FPSGraph {
     this.last = now;
 
     const fps    = dt > 0 ? 1000 / dt : 0;
-    this.current = fps;
+    this.current  = fps;
+    this.renderMs = dt;
     this.buf[this.ptr] = fps;
     this.ptr = (this.ptr + 1) % this.samples;
     if (this.ptr === 0) this.filled = true;
