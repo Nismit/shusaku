@@ -199,7 +199,31 @@ export const main = () => {
   // Stats
   let frameCount = 0;
 
-  // Text rendering helpers
+  // Text batch — pre-allocated typed arrays, zero-allocated per frame.
+  // All renderText() calls accumulate here; flushText() submits in one pass.
+  const GLYPH_BATCH_MAX = 64;
+  const _batchBounds = new Float32Array(GLYPH_BATCH_MAX * 4);
+  const _batchPlane  = new Float32Array(GLYPH_BATCH_MAX * 4);
+  const _batchPos    = new Float32Array(GLYPH_BATCH_MAX * 2);
+  const _batchAlpha  = new Float32Array(GLYPH_BATCH_MAX);
+  let   _batchCount  = 0;
+
+  const flushText = () => {
+    if (_batchCount === 0) return;
+    cgl.pass(msdfTextShader, {
+      uAtlas:       fontState.atlas,
+      uGlyphBounds: _batchBounds,
+      uGlyphPlane:  _batchPlane,
+      uGlyphPos:    _batchPos,
+      uGlyphAlpha:  _batchAlpha,
+      uGlyphCount:  _batchCount,
+      uResolution:  [canvas.width, canvas.height],
+      uColor:       [0, 0, 0, 1],
+      uAtlasSize:   fontState.atlasSize,
+    });
+    _batchCount = 0;
+  };
+
   const measureTextWidth = (text, fontSize) => {
     let width = 0;
     for (const char of text) {
@@ -211,10 +235,8 @@ export const main = () => {
     return width;
   };
 
-  const prepareTextGlyphs = (text, x, y, fontSize) => {
-    const glyphBounds = [];
-    const glyphPlane = [];
-    const glyphPos = [];
+  const renderText = (text, x, y, fontSize, color = [1, 1, 1, 1]) => {
+    const alpha = color[3];
     let cursorX = x;
 
     for (const char of text) {
@@ -227,43 +249,32 @@ export const main = () => {
       const xOffset = tabular ? (cellAdvance - glyph.advance) * fontSize * 0.5 : 0;
 
       if (glyph.atlasBounds && glyph.planeBounds) {
-        if (glyphBounds.length >= 32) break;
+        if (_batchCount >= GLYPH_BATCH_MAX) flushText();
+
+        const i  = _batchCount;
         const ab = glyph.atlasBounds;
         const pb = glyph.planeBounds;
-        glyphBounds.push([ab.left, ab.bottom, ab.right, ab.top]);
-        glyphPlane.push([pb.left, pb.bottom, pb.right, pb.top]);
-        glyphPos.push([cursorX + xOffset, y]);
+
+        _batchBounds[i * 4]     = ab.left;
+        _batchBounds[i * 4 + 1] = ab.bottom;
+        _batchBounds[i * 4 + 2] = ab.right;
+        _batchBounds[i * 4 + 3] = ab.top;
+
+        // Pre-scale planeBounds by fontSize so the shader needs no uFontSize
+        _batchPlane[i * 4]     = pb.left   * fontSize;
+        _batchPlane[i * 4 + 1] = pb.bottom * fontSize;
+        _batchPlane[i * 4 + 2] = pb.right  * fontSize;
+        _batchPlane[i * 4 + 3] = pb.top    * fontSize;
+
+        _batchPos[i * 2]     = cursorX + xOffset;
+        _batchPos[i * 2 + 1] = y;
+
+        _batchAlpha[i] = alpha;
+        _batchCount++;
       }
 
       cursorX += cellAdvance * fontSize;
     }
-
-    return { glyphBounds, glyphPlane, glyphPos };
-  };
-
-  const renderText = (text, x, y, fontSize, color = [1, 1, 1, 1]) => {
-    const { glyphBounds, glyphPlane, glyphPos } = prepareTextGlyphs(text, x, y, fontSize);
-    if (glyphBounds.length === 0) return;
-
-    const flatBounds = glyphBounds.flat();
-    const flatPlane = glyphPlane.flat();
-    const flatPos = glyphPos.flat();
-
-    while (flatBounds.length < 128) flatBounds.push(0);
-    while (flatPlane.length < 128) flatPlane.push(0);
-    while (flatPos.length < 64) flatPos.push(0);
-
-    cgl.pass(msdfTextShader, {
-      uAtlas: fontState.atlas,
-      uGlyphBounds: flatBounds,
-      uGlyphPlane: flatPlane,
-      uGlyphPos: flatPos,
-      uGlyphCount: glyphBounds.length,
-      uResolution: [canvas.width, canvas.height],
-      uFontSize: fontSize,
-      uColor: color,
-      uAtlasSize: fontState.atlasSize,
-    });
   };
 
   // Format number with fixed decimals
@@ -448,6 +459,7 @@ export const main = () => {
       }
     }
 
+    flushText();
     gl.disable(gl.BLEND);
 
     requestAnimationFrame(render);

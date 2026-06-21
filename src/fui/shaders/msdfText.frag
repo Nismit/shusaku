@@ -5,12 +5,12 @@ in vec2 vTexCoord;
 out vec4 fragColor;
 
 uniform sampler2D uAtlas;
-uniform vec4 uGlyphBounds[32];
-uniform vec4 uGlyphPlane[32];
-uniform vec2 uGlyphPos[32];
+uniform vec4 uGlyphBounds[64];
+uniform vec4 uGlyphPlane[64];  // pre-scaled by fontSize in JS
+uniform vec2 uGlyphPos[64];
+uniform float uGlyphAlpha[64];
 uniform int uGlyphCount;
 uniform vec2 uResolution;
-uniform float uFontSize;
 uniform vec4 uColor;
 uniform vec2 uAtlasSize;
 
@@ -22,15 +22,15 @@ void main() {
   vec2 pixelCoord = vec2(vTexCoord.x, 1.0 - vTexCoord.y) * uResolution;
   vec4 color = vec4(0.0);
 
-  for (int i = 0; i < 32; i++) {
+  for (int i = 0; i < 64; i++) {
     if (i >= uGlyphCount) break;
 
     vec4 atlas = uGlyphBounds[i];
     vec4 plane = uGlyphPlane[i];
-    vec2 pos = uGlyphPos[i];
+    vec2 pos   = uGlyphPos[i];
 
-    vec2 glyphMin = pos + vec2(plane.x, -plane.w) * uFontSize;
-    vec2 glyphMax = pos + vec2(plane.z, -plane.y) * uFontSize;
+    vec2 glyphMin = pos + vec2(plane.x, -plane.w);
+    vec2 glyphMax = pos + vec2(plane.z, -plane.y);
 
     if (pixelCoord.x >= glyphMin.x && pixelCoord.x <= glyphMax.x &&
         pixelCoord.y >= glyphMin.y && pixelCoord.y <= glyphMax.y) {
@@ -52,7 +52,7 @@ void main() {
       float screenPxDistance = screenPxRange * (sd - 0.5);
       float opacity = clamp(screenPxDistance + 0.5, 0.0, 1.0);
 
-      color = max(color, vec4(uColor.rgb, uColor.a * opacity));
+      color = max(color, vec4(uColor.rgb, uGlyphAlpha[i] * opacity));
     }
   }
 
