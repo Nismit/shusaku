@@ -5,6 +5,7 @@ import msdfTextVert from './shaders/msdfText.vert?raw';
 import msdfTextFrag from './shaders/msdfText.frag?raw';
 import cursorFrag from './shaders/cursor.frag?raw';
 import gaugeFrag from './shaders/gauge.frag?raw';
+import arcFrag from './shaders/arc.frag?raw';
 
 export const main = () => {
   const canvas = document.createElement('canvas');
@@ -28,6 +29,7 @@ export const main = () => {
   const msdfTextShader = cgl.createShader({ vertex: msdfTextVert, fragment: msdfTextFrag });
   const cursorShader = cgl.createShader({ fragment: cursorFrag });
   const gaugeShader = cgl.createShader({ fragment: gaugeFrag });
+  const arcShader = cgl.createShader({ fragment: arcFrag });
 
   const fpsGraph = new FPSGraph();
 
@@ -336,6 +338,20 @@ export const main = () => {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
+    // Attitude arc gauges (background element, drawn first)
+    {
+      const arcRadius = Math.min(canvas.width, canvas.height) * 0.45;
+      cgl.pass(arcShader, {
+        uResolution: [canvas.width, canvas.height],
+        uRoll:       sensors.orientation.gamma,
+        uPitch:      sensors.orientation.beta,
+        uArcRadius:  arcRadius,
+        uThickness:  1.5 * dpr,
+        uOpacity:    1.0,
+        uColor:      [0, 0, 0, 0.85],
+      });
+    }
+
     const baseFontSize = Math.min(canvas.width, canvas.height) * 0.03;
     const lineHeight = baseFontSize * 1.4;
     const padding = 16 * dpr;
@@ -412,8 +428,28 @@ export const main = () => {
       y += lineHeight * 0.9;
     }
 
-    // Device sensors (disabled)
-    // if (sensors.permission === 'granted') { ... }
+    // Arc gauge labels — centered inside each arc half
+    {
+      const arcR    = Math.min(canvas.width, canvas.height) * 0.45;
+      const cx      = canvas.width  * 0.5;
+      const cy      = canvas.height * 0.5;
+      const lf      = baseFontSize * 0.45;
+      const lh      = lf * 1.5;
+
+      const rollLabel = 'ROLL';
+      const rollVal   = `${sensors.orientation.gamma >= 0 ? ' ' : ''}${sensors.orientation.gamma.toFixed(1)}`;
+      const pitchLabel = 'PITCH';
+      const pitchVal   = `${sensors.orientation.beta >= 0 ? ' ' : ''}${sensors.orientation.beta.toFixed(1)}`;
+
+      const lx = cx - arcR * 0.62;
+      const rx = cx + arcR * 0.62;
+      const ly = cy - lh * 0.5;
+
+      renderText(rollLabel, lx - measureTextWidth(rollLabel, lf) * 0.5, ly,      lf, dim);
+      renderText(rollVal,   lx - measureTextWidth(rollVal,   lf) * 0.5, ly + lh, lf, accent);
+      renderText(pitchLabel, rx - measureTextWidth(pitchLabel, lf) * 0.5, ly,      lf, dim);
+      renderText(pitchVal,   rx - measureTextWidth(pitchVal,   lf) * 0.5, ly + lh, lf, accent);
+    }
 
     // Gauge (bottom-left, below FPS graph)
     // FPS graph: bottom:24px, height:30px → top of graph is 54px from viewport bottom.
