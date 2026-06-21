@@ -30,6 +30,11 @@ export const main = () => {
 
   const fpsGraph = new FPSGraph();
 
+  // GPU timer query — measures actual GPU work time per frame.
+  // EXT_disjoint_timer_query_webgl2 is supported on Chrome/Android but not iOS Safari.
+  const gpuExt = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+  let pendingGpuQuery = null;
+
   // Font state
   const fontState = {
     atlas: null,
@@ -278,9 +283,30 @@ export const main = () => {
     frameCount++;
     fpsGraph.tick();
 
+    // Read GPU timer result from the previous frame (results arrive 1 frame late)
+    if (pendingGpuQuery) {
+      if (gl.getQueryParameter(pendingGpuQuery, gl.QUERY_RESULT_AVAILABLE) &&
+          !gl.getParameter(gpuExt.GPU_DISJOINT_EXT)) {
+        fpsGraph.setRenderMs(gl.getQueryParameter(pendingGpuQuery, gl.QUERY_RESULT) / 1e6);
+      }
+      gl.deleteQuery(pendingGpuQuery);
+      pendingGpuQuery = null;
+    }
+
+    // Begin GPU timer for this frame
+    let activeQuery = null;
+    if (gpuExt) {
+      activeQuery = gl.createQuery();
+      gl.beginQuery(gpuExt.TIME_ELAPSED_EXT, activeQuery);
+    }
+
     cgl.clear(1.0, 1.0, 1.0, 1.0);
 
     if (!fontState.ready) {
+      if (activeQuery) {
+        gl.endQuery(gpuExt.TIME_ELAPSED_EXT);
+        pendingGpuQuery = activeQuery;
+      }
       requestAnimationFrame(render);
       return;
     }
@@ -452,6 +478,11 @@ export const main = () => {
     }
 
     gl.disable(gl.BLEND);
+
+    if (activeQuery) {
+      gl.endQuery(gpuExt.TIME_ELAPSED_EXT);
+      pendingGpuQuery = activeQuery;
+    }
 
     requestAnimationFrame(render);
   };

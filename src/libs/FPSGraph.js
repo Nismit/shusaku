@@ -65,7 +65,6 @@ export class FPSGraph {
 
     const fps    = dt > 0 ? 1000 / dt : 0;
     this.current  = fps;
-    this.renderMs = dt;
     this.buf[this.ptr] = fps;
     this.ptr = (this.ptr + 1) % this.samples;
     if (this.ptr === 0) this.filled = true;
@@ -125,10 +124,11 @@ export class FPSGraph {
     ctx.font      = '10px monospace';
     ctx.fillText(`${Math.round(this.current)} fps`, 0, 10);
 
-    // Render time label below graph
+    // GPU render time label below graph
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.font      = '9px monospace';
-    ctx.fillText(`${this.renderMs.toFixed(2)} ms`, 0, height + _msLabelH - 1);
+    const msText  = this.renderMs > 0 ? `${this.renderMs.toFixed(2)} ms` : '-- ms';
+    ctx.fillText(msText, 0, height + _msLabelH - 1);
   }
 
   destroy() {
