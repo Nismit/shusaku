@@ -23,30 +23,39 @@ export class FPSGraph {
     bottom  = 40,
     left    = 40,
   } = {}) {
-    this.samples = samples;
-    this.minFps  = minFps;
-    this.maxFps  = maxFps;
-    this.width   = width;
-    this.height  = height;
-    this.buf     = new Float32Array(samples);
-    this.ptr     = 0;
-    this.filled  = false;
-    this.last    = performance.now();
-    this.current = 0;
+    this.samples  = samples;
+    this.minFps   = minFps;
+    this.maxFps   = maxFps;
+    this.width    = width;
+    this.height   = height;
+    this.buf      = new Float32Array(samples);
+    this.ptr      = 0;
+    this.filled   = false;
+    this.last     = performance.now();
+    this.current  = 0;
+    this.renderMs = 0;
+
+    const msLabelH  = 11;
+    this._msLabelH  = msLabelH;
+    const totalH    = height + msLabelH;
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const el  = document.createElement('canvas');
-    el.width  = width  * dpr;
-    el.height = height * dpr;
+    el.width  = width   * dpr;
+    el.height = totalH  * dpr;
     el.style.cssText =
       `position:fixed;bottom:${bottom}px;left:${left}px;` +
-      `width:${width}px;height:${height}px;z-index:20;pointer-events:none`;
+      `width:${width}px;height:${totalH}px;z-index:20;pointer-events:none`;
     document.body.appendChild(el);
 
     const ctx = el.getContext('2d');
     ctx.scale(dpr, dpr);
     this.ctx = ctx;
     this.el  = el;
+  }
+
+  setRenderMs(ms) {
+    this.renderMs = ms;
   }
 
   tick() {
@@ -65,10 +74,11 @@ export class FPSGraph {
   }
 
   _draw() {
-    const { ctx, width, height, buf, samples, ptr, filled, minFps, maxFps } = this;
+    const { ctx, width, height, buf, samples, ptr, filled, minFps, maxFps, _msLabelH } = this;
+    const totalH = height + _msLabelH;
 
     // Transparent background
-    ctx.clearRect(0, 0, width, height);
+    ctx.clearRect(0, 0, width, totalH);
 
     const count = filled ? samples : ptr;
     if (count < 2) return;
@@ -113,6 +123,11 @@ export class FPSGraph {
     ctx.fillStyle = 'rgba(0,0,0,0.7)';
     ctx.font      = '10px monospace';
     ctx.fillText(`${Math.round(this.current)} fps`, 0, 10);
+
+    // Render time label below graph
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.font      = '9px monospace';
+    ctx.fillText(`${this.renderMs.toFixed(2)} ms`, 0, height + _msLabelH - 1);
   }
 
   destroy() {

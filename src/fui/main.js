@@ -453,6 +453,7 @@ export const main = () => {
 
     gl.disable(gl.BLEND);
 
+    fpsGraph.setRenderMs(performance.now() - now);
     requestAnimationFrame(render);
   };
 
