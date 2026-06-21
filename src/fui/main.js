@@ -1,6 +1,7 @@
 import { chottoGL } from '../libs/esChottoGL.js';
 import { MultiTouchInput } from './MultiTouchInput.js';
 import { FPSGraph } from '../libs/FPSGraph.js';
+import msdfTextVert from './shaders/msdfText.vert?raw';
 import msdfTextFrag from './shaders/msdfText.frag?raw';
 import cursorFrag from './shaders/cursor.frag?raw';
 import gaugeFrag from './shaders/gauge.frag?raw';
@@ -24,7 +25,7 @@ export const main = () => {
   applySize();
   window.addEventListener('resize', applySize);
 
-  const msdfTextShader = cgl.createShader({ fragment: msdfTextFrag });
+  const msdfTextShader = cgl.createShader({ vertex: msdfTextVert, fragment: msdfTextFrag });
   const cursorShader = cgl.createShader({ fragment: cursorFrag });
   const gaugeShader = cgl.createShader({ fragment: gaugeFrag });
 
@@ -199,28 +200,65 @@ export const main = () => {
   // Stats
   let frameCount = 0;
 
-  // Text batch — pre-allocated typed arrays, zero-allocated per frame.
-  // All renderText() calls accumulate here; flushText() submits in one pass.
-  const GLYPH_BATCH_MAX = 64;
-  const _batchBounds = new Float32Array(GLYPH_BATCH_MAX * 4);
-  const _batchPlane  = new Float32Array(GLYPH_BATCH_MAX * 4);
-  const _batchPos    = new Float32Array(GLYPH_BATCH_MAX * 2);
-  const _batchAlpha  = new Float32Array(GLYPH_BATCH_MAX);
-  let   _batchCount  = 0;
+  // Instanced text rendering.
+  //
+  // Each glyph is a small quad covering only its bounding box, drawn with
+  // gl.drawArraysInstanced.  Fragment cost is the sum of glyph areas — not
+  // (screenPixels × glyphCount) like the old fullscreen-SDF-loop shader, which
+  // exploded during multitouch as the on-screen text count grew.
+  //
+  // renderText() appends 9 floats/glyph into _instanceData; flushText() uploads
+  // and draws the whole batch in one call.
+  const GLYPH_BATCH_MAX = 256;
+  const FLOATS_PER_GLYPH = 9; // screenRect(4) + atlasRect(4) + alpha(1)
+  const INSTANCE_STRIDE = FLOATS_PER_GLYPH * 4;
+  const _instanceData = new Float32Array(GLYPH_BATCH_MAX * FLOATS_PER_GLYPH);
+  let _batchCount = 0;
+
+  // Static unit-quad corners (triangle strip): TL, TR, BL, BR
+  const _cornerBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, _cornerBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
+
+  const _instanceBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, _instanceBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, _instanceData.byteLength, gl.DYNAMIC_DRAW);
+
+  const _textVAO = gl.createVertexArray();
+  gl.bindVertexArray(_textVAO);
+  // location 0: corner (per-vertex)
+  gl.bindBuffer(gl.ARRAY_BUFFER, _cornerBuf);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(0, 0);
+  // locations 1-3: per-instance
+  gl.bindBuffer(gl.ARRAY_BUFFER, _instanceBuf);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, INSTANCE_STRIDE, 0);
+  gl.vertexAttribDivisor(1, 1);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 4, gl.FLOAT, false, INSTANCE_STRIDE, 16);
+  gl.vertexAttribDivisor(2, 1);
+  gl.enableVertexAttribArray(3);
+  gl.vertexAttribPointer(3, 1, gl.FLOAT, false, INSTANCE_STRIDE, 32);
+  gl.vertexAttribDivisor(3, 1);
+  gl.bindVertexArray(null);
 
   const flushText = () => {
     if (_batchCount === 0) return;
-    cgl.pass(msdfTextShader, {
-      uAtlas:       fontState.atlas,
-      uGlyphBounds: _batchBounds,
-      uGlyphPlane:  _batchPlane,
-      uGlyphPos:    _batchPos,
-      uGlyphAlpha:  _batchAlpha,
-      uGlyphCount:  _batchCount,
-      uResolution:  [canvas.width, canvas.height],
-      uColor:       [0, 0, 0, 1],
-      uAtlasSize:   fontState.atlasSize,
-    });
+    msdfTextShader.use();
+    msdfTextShader.setTexture('uAtlas', fontState.atlas);
+    msdfTextShader.setUniform('uResolution', [canvas.width, canvas.height]);
+    msdfTextShader.setUniform('uAtlasSize', fontState.atlasSize);
+    msdfTextShader.setUniform('uColor', [0, 0, 0, 1]);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, _instanceBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, _instanceData, 0, _batchCount * FLOATS_PER_GLYPH);
+
+    gl.bindVertexArray(_textVAO);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, _batchCount);
+    gl.bindVertexArray(null);
+
     _batchCount = 0;
   };
 
@@ -237,6 +275,7 @@ export const main = () => {
 
   const renderText = (text, x, y, fontSize, color = [1, 1, 1, 1]) => {
     const alpha = color[3];
+    const [atlasW, atlasH] = fontState.atlasSize;
     let cursorX = x;
 
     for (const char of text) {
@@ -251,25 +290,23 @@ export const main = () => {
       if (glyph.atlasBounds && glyph.planeBounds) {
         if (_batchCount >= GLYPH_BATCH_MAX) flushText();
 
-        const i  = _batchCount;
+        const o  = _batchCount * FLOATS_PER_GLYPH;
         const ab = glyph.atlasBounds;
         const pb = glyph.planeBounds;
+        const gx = cursorX + xOffset;
 
-        _batchBounds[i * 4]     = ab.left;
-        _batchBounds[i * 4 + 1] = ab.bottom;
-        _batchBounds[i * 4 + 2] = ab.right;
-        _batchBounds[i * 4 + 3] = ab.top;
+        // screenRect: x, y (top-left), w, h — device pixels, y-down
+        _instanceData[o]     = gx + pb.left * fontSize;
+        _instanceData[o + 1] = y - pb.top * fontSize;
+        _instanceData[o + 2] = (pb.right - pb.left) * fontSize;
+        _instanceData[o + 3] = (pb.top - pb.bottom) * fontSize;
+        // atlasRect: u0, vTop, u1, vBottom — normalized atlas UV
+        _instanceData[o + 4] = ab.left / atlasW;
+        _instanceData[o + 5] = 1 - ab.top / atlasH;
+        _instanceData[o + 6] = ab.right / atlasW;
+        _instanceData[o + 7] = 1 - ab.bottom / atlasH;
+        _instanceData[o + 8] = alpha;
 
-        // Pre-scale planeBounds by fontSize so the shader needs no uFontSize
-        _batchPlane[i * 4]     = pb.left   * fontSize;
-        _batchPlane[i * 4 + 1] = pb.bottom * fontSize;
-        _batchPlane[i * 4 + 2] = pb.right  * fontSize;
-        _batchPlane[i * 4 + 3] = pb.top    * fontSize;
-
-        _batchPos[i * 2]     = cursorX + xOffset;
-        _batchPos[i * 2 + 1] = y;
-
-        _batchAlpha[i] = alpha;
         _batchCount++;
       }
 
