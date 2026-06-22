@@ -1,20 +1,20 @@
 // Aircraft attitude indicator arc gauges.
 // Left arc = roll (gamma), right arc = pitch (beta).
-// Two symmetric arcs centered on screen center with tick marks
-// and a filled indicator segment showing current tilt.
+// Indicator is a rectangular bar curved along the arc, matching
+// the bottom-left gauge aesthetic. Tick marks sit outside the bar.
 
 uniform vec2  uResolution;
 uniform float uRoll;       // gamma degrees (-90..90)
 uniform float uPitch;      // beta degrees (-180..180)
 uniform float uArcRadius;  // device pixels
-uniform float uThickness;  // stroke width, device pixels
+uniform float uThickness;  // base stroke width, device pixels
 uniform float uOpacity;
 uniform vec4  uColor;
 
 const float PI   = 3.14159265359;
 const float DEG  = PI / 180.0;
-const float SPAN = 70.0 * DEG;   // arc half-span
-const float CLMP = 60.0 * DEG;   // sensor display range
+const float SPAN = 70.0 * DEG;
+const float CLMP = 60.0 * DEG;
 
 float sdSeg(vec2 p, vec2 a, vec2 b) {
   vec2 ab = b - a;
@@ -31,6 +31,7 @@ float tick(vec2 px, vec2 c, float ang, float r0, float r1, float hw) {
   return aa(sdSeg(px, c + dir * r0, c + dir * r1), hw);
 }
 
+// Thin background ring showing full ±SPAN range
 float ring(vec2 px, vec2 c, float r, float cAng, float hw) {
   vec2 d = px - c;
   float dr = abs(length(d) - r);
@@ -40,64 +41,68 @@ float ring(vec2 px, vec2 c, float r, float cAng, float hw) {
   return aa(dr, hw) * smoothstep(SPAN, SPAN - 0.07, abs(rel));
 }
 
-// Filled arc segment on the ring from cAng to toAng
-float fillArc(vec2 px, vec2 c, float r, float cAng, float toAng, float hw) {
+// Rectangular bar: thick ring segment from cAng to toAng, width = 2*barHW
+float barArc(vec2 px, vec2 c, float r, float cAng, float toAng, float barHW) {
   vec2 d = px - c;
-  float dr = abs(length(d) - r);
-  if (dr > hw + 2.0) return 0.0;
+  float dist = length(d);
+  if (dist < r - barHW - 1.5 || dist > r + barHW + 1.5) return 0.0;
   float ang   = atan(d.y, d.x);
   float rel   = mod(ang   - cAng + PI, 2.0 * PI) - PI;
   float toRel = mod(toAng - cAng + PI, 2.0 * PI) - PI;
   float inside = (toRel >= 0.0)
     ? step(0.0, rel) * step(rel, toRel)
     : step(toRel, rel) * step(rel, 0.0);
-  return aa(dr, hw) * inside;
+  // AA on radial edges only (rectangular cut on angular ends)
+  return aa(abs(dist - r), barHW) * inside;
 }
 
 void oneArc(vec2 px, vec2 c, float r, float cAng, float sensorDeg, float dir,
             float hw, inout float alpha) {
-  float dist = length(px - c);
-  if (dist < r - r * 0.16 - 2.0 || dist > r + r * 0.05 + 2.0) return;
+  float barHW = uThickness * 3.0;  // bar half-width (~gauge height)
+  float dist  = length(px - c);
 
+  // Tight early exit: only pixels near bar + outer ticks
+  float innerBound = r - barHW * 1.5 - 2.0;
+  float outerBound = r + barHW * 2.2 + 2.0;
+  if (dist < innerBound || dist > outerBound) return;
+
+  // Angular cull
   vec2  dv  = px - c;
   float ag  = atan(dv.y, dv.x);
   float rel = mod(ag - cAng + PI, 2.0 * PI) - PI;
   if (abs(rel) > SPAN + 0.15) return;
 
-  // Background ring track
-  alpha = max(alpha, ring(px, c, r, cAng, hw) * 0.32);
-
   // Sensor to arc angle
   float sRad   = clamp(sensorDeg * DEG, -CLMP, CLMP) * (SPAN / CLMP);
   float indAng = cAng + dir * sRad;
 
-  // Filled indicator arc
-  alpha = max(alpha, fillArc(px, c, r, cAng, indAng, hw) * 0.65);
+  // Dim background ring (shows full range behind bar)
+  alpha = max(alpha, ring(px, c, r, cAng, hw) * 0.25);
 
-  // Tick radii
-  float tl  = r * 0.08;
-  float tm  = r * 0.05;
-  float ts  = r * 0.03;
-  float to  = r * 0.02;
+  // Rectangular bar from neutral to current value
+  alpha = max(alpha, barArc(px, c, r, cAng, indAng, barHW) * 0.82);
+
+  // Tick marks sit outside the bar (outer edge of bar + offset)
+  float rOuter = r + barHW;          // outer edge of bar
+  float ts = barHW * 0.45;           // short tick length
+  float tm = barHW * 0.75;           // medium tick length
+  float tl = barHW * 1.10;           // long (center) tick length
   float thw = hw * 0.55;
 
-  // Center tick (longest)
-  alpha = max(alpha, tick(px, c, cAng,             r - tl, r + to, thw) * 0.8);
+  // Center (0°) reference — crosses through bar for visibility
+  alpha = max(alpha, tick(px, c, cAng,             r - barHW * 0.4, rOuter + tl, thw) * 0.9);
   // ±15° short
-  alpha = max(alpha, tick(px, c, cAng - 15.0*DEG,  r - ts, r,      thw * 0.7) * 0.5);
-  alpha = max(alpha, tick(px, c, cAng + 15.0*DEG,  r - ts, r,      thw * 0.7) * 0.5);
+  alpha = max(alpha, tick(px, c, cAng - 15.0*DEG,  rOuter, rOuter + ts, thw * 0.8) * 0.6);
+  alpha = max(alpha, tick(px, c, cAng + 15.0*DEG,  rOuter, rOuter + ts, thw * 0.8) * 0.6);
   // ±30° medium
-  alpha = max(alpha, tick(px, c, cAng - 30.0*DEG,  r - tm, r + to, thw) * 0.65);
-  alpha = max(alpha, tick(px, c, cAng + 30.0*DEG,  r - tm, r + to, thw) * 0.65);
+  alpha = max(alpha, tick(px, c, cAng - 30.0*DEG,  rOuter, rOuter + tm, thw) * 0.75);
+  alpha = max(alpha, tick(px, c, cAng + 30.0*DEG,  rOuter, rOuter + tm, thw) * 0.75);
   // ±45° short
-  alpha = max(alpha, tick(px, c, cAng - 45.0*DEG,  r - ts, r,      thw * 0.7) * 0.5);
-  alpha = max(alpha, tick(px, c, cAng + 45.0*DEG,  r - ts, r,      thw * 0.7) * 0.5);
+  alpha = max(alpha, tick(px, c, cAng - 45.0*DEG,  rOuter, rOuter + ts, thw * 0.8) * 0.6);
+  alpha = max(alpha, tick(px, c, cAng + 45.0*DEG,  rOuter, rOuter + ts, thw * 0.8) * 0.6);
   // ±60° medium
-  alpha = max(alpha, tick(px, c, cAng - 60.0*DEG,  r - tm, r + to, thw) * 0.65);
-  alpha = max(alpha, tick(px, c, cAng + 60.0*DEG,  r - tm, r + to, thw) * 0.65);
-
-  // Current value indicator (full opacity, longest)
-  alpha = max(alpha, tick(px, c, indAng, r - r*0.12, r + r*0.04, hw * 0.85));
+  alpha = max(alpha, tick(px, c, cAng - 60.0*DEG,  rOuter, rOuter + tm, thw) * 0.75);
+  alpha = max(alpha, tick(px, c, cAng + 60.0*DEG,  rOuter, rOuter + tm, thw) * 0.75);
 }
 
 void main() {
