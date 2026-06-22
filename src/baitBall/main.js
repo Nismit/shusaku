@@ -543,6 +543,7 @@ void main() {
   gui.close();
   gui.hide();
 
+
   // --- Resize ---
   const onResize = () => {
     const w = window.innerWidth;

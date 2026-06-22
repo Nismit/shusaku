@@ -239,6 +239,7 @@ export const main = () => {
 
   window.addEventListener('resize', () => { prevLabelKey = ''; });
 
+
   // ---- Render loop ----
 
   const render = () => {

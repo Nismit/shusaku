@@ -96,6 +96,7 @@ export const main = () => {
 
   gui.close();
 
+
   // --- Timer controls ---
   let isPlaying = true;
   let frameCount = 0;
