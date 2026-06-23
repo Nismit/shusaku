@@ -55,12 +55,10 @@ export const main = async () => {
     // Simulation
     noiseScale: 2.4,
     noiseStrength: 0.00575,
-    noiseSpeed: 1.0,
+    timeScale: 1.0,
     lifetime: 1.11,
     spawnRadius: 0.2,
     expandSpeed: 0.0,
-    containRadius: 0.5,
-    containStrength: 0.0,
     particleSize: 0.5,
     particleAmount: 1.0,
     // Camera
@@ -70,9 +68,8 @@ export const main = async () => {
     autoRotate: true,
     autoRotateSpeed: 0.12,
     // Lighting
-    lightDirX: -0.5,
-    lightDirY: 1.0,
-    lightDirZ: 0.0,
+    lightVertical: 1.1,
+    lightHorizontal: -1.57,
     lightColor: '#ffffff',
     lightIntensity: 1.0,
     ambient: 0.56,
@@ -80,10 +77,9 @@ export const main = async () => {
     saturation: 1.25,
     contrast: 1.12,
     exposure: 0.75,
-    shadowColor: '#2f4c52',
     // Colors
-    palette: ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff'],
-    colorSpeed: 0.0,
+    particleColor: '#ffffff',
+    shadowColor: '#2f4c52',
     bgTop: '#173038',
     bgBottom: '#3d626b',
     // Motion blur
@@ -175,18 +171,26 @@ export const main = async () => {
 
   const timer = new Timer();
   timer.start();
-  let lastTime = 0;
+  let lastRawTime = 0;
+  let scaledTime = 0;
 
   const render = () => {
-    const time = timer.getElapsedTime();
-    const dt = time - lastTime;
-    lastTime = time;
+    const rawTime = timer.getElapsedTime();
+    const rawDt = rawTime - lastRawTime;
+    lastRawTime = rawTime;
+    const dt = rawDt * params.timeScale;
+    scaledTime += dt;
     const deltaFrames = Math.min(dt * 60.0, 4.0);
 
-    if (params.autoRotate) params.rotationY = time * params.autoRotateSpeed;
+    if (params.autoRotate) params.rotationY = scaledTime * params.autoRotateSpeed;
 
     const drawCount = Math.max(1, Math.floor(PARTICLE_COUNT * params.particleAmount));
-    const lightDir = [params.lightDirX, params.lightDirY, params.lightDirZ];
+    const cosV = Math.cos(params.lightVertical);
+    const lightDir = [
+      cosV * Math.sin(params.lightHorizontal),
+      Math.sin(params.lightVertical),
+      cosV * Math.cos(params.lightHorizontal),
+    ];
     const lightVP = buildLightMatrices(lightDir, params.shadowExtent);
 
     // === GPGPU update (A -> B) ===
@@ -195,15 +199,12 @@ export const main = async () => {
       positionsOut: positionsB,
       defaultPositions,
       count: PARTICLE_COUNT,
-      time,
+      time: scaledTime,
       deltaFrames,
       noiseScale: params.noiseScale,
       noiseStrength: params.noiseStrength,
-      noiseSpeed: params.noiseSpeed,
       lifetime: params.lifetime,
       expandSpeed: params.expandSpeed,
-      containRadius: params.containRadius,
-      containStrength: params.containStrength,
     });
     [positionsA, positionsB] = [positionsB, positionsA];
 
@@ -236,14 +237,8 @@ export const main = async () => {
       rotation: [params.rotationX, params.rotationY],
       zoom: params.zoom,
       particleSize: params.particleSize * basePointSize,
-      colorSpeed: params.colorSpeed,
-      time,
       lightDir,
-      palette0: hexToRGB(params.palette[0]),
-      palette1: hexToRGB(params.palette[1]),
-      palette2: hexToRGB(params.palette[2]),
-      palette3: hexToRGB(params.palette[3]),
-      palette4: hexToRGB(params.palette[4]),
+      particleColor: hexToRGB(params.particleColor),
       lightColor: scaleColor(hexToRGB(params.lightColor), params.lightIntensity),
       ambient: params.ambient,
       shininess: params.shininess,
@@ -314,12 +309,10 @@ export const main = async () => {
     const simFolder = gui.addFolder('Simulation');
     simFolder.add(params, 'noiseScale', 0.5, 5.0).name('Noise Scale');
     simFolder.add(params, 'noiseStrength', 0.005, 0.05).name('Noise Strength');
-    simFolder.add(params, 'noiseSpeed', 0.1, 2.0).name('Noise Speed');
+    simFolder.add(params, 'timeScale', 0.05, 3.0, 0.05).name('Time');
     simFolder.add(params, 'lifetime', 0.3, 3.0).name('Lifetime (sec)');
     simFolder.add(params, 'spawnRadius', 0.01, 0.5).name('Spawn Radius').onChange(() => initGPGPU());
     simFolder.add(params, 'expandSpeed', 0.0, 0.05).name('Expand Speed');
-    simFolder.add(params, 'containRadius', 0.1, 1.0).name('Contain Radius');
-    simFolder.add(params, 'containStrength', 0.0, 0.1).name('Contain Strength');
 
     const visualFolder = gui.addFolder('Visual');
     visualFolder.add(params, 'particleSize', 0.2, 3.0, 0.05).name('Particle Size');
@@ -327,16 +320,15 @@ export const main = async () => {
     visualFolder.add(params, 'trailAmount', 0.0, 6.0, 0.1).name('Light Trails');
 
     const cameraFolder = gui.addFolder('Camera');
-    cameraFolder.add(params, 'rotationX', -1.57, 1.57).name('Rotation X');
-    cameraFolder.add(params, 'rotationY', -3.14, 3.14).name('Rotation Y').listen();
+    cameraFolder.add(params, 'rotationX', -1.57, 1.57).name('Vertical');
+    cameraFolder.add(params, 'rotationY', -3.14, 3.14).name('Horizontal').listen();
     cameraFolder.add(params, 'zoom', 0.5, 3.0).name('Zoom');
     cameraFolder.add(params, 'autoRotate').name('Auto Rotate');
     cameraFolder.add(params, 'autoRotateSpeed', 0.0, 0.5).name('Rotate Speed');
 
     const lightFolder = gui.addFolder('Lighting');
-    lightFolder.add(params, 'lightDirX', -1.0, 1.0).name('Light X');
-    lightFolder.add(params, 'lightDirY', -1.0, 1.0).name('Light Y');
-    lightFolder.add(params, 'lightDirZ', -1.0, 1.0).name('Light Z');
+    lightFolder.add(params, 'lightVertical', -1.57, 1.57).name('Vertical');
+    lightFolder.add(params, 'lightHorizontal', -3.14, 3.14).name('Horizontal');
     lightFolder.addColor(params, 'lightColor').name('Light Color');
     lightFolder.add(params, 'lightIntensity', 0.0, 3.0, 0.05).name('Light Intensity');
     lightFolder.add(params, 'ambient', 0.0, 1.2, 0.02).name('Ambient');
@@ -346,15 +338,12 @@ export const main = async () => {
     lightFolder.add(params, 'exposure', 0.2, 2.5, 0.05).name('Exposure');
 
     const colorFolder = gui.addFolder('Colors');
-    const paletteFolder = colorFolder.addFolder('Palette');
-    for (let i = 0; i < 5; i++) paletteFolder.addColor(params.palette, i).name(`Color ${i + 1}`);
-    colorFolder.add(params, 'colorSpeed', 0.0, 1.0).name('Hue Drift');
-    colorFolder.addColor(params, 'shadowColor').name('Shadow Color');
+    colorFolder.addColor(params, 'particleColor').name('Particle');
+    colorFolder.addColor(params, 'shadowColor').name('Shadow');
     colorFolder.addColor(params, 'bgTop').name('BG Top');
     colorFolder.addColor(params, 'bgBottom').name('BG Bottom');
 
     const shadowFolder = gui.addFolder('Shadow');
-    shadowFolder.add(params, 'shadowEnabled').name('Enabled');
     shadowFolder.add(params, 'shadowPointSize', 1.0, 10.0).name('Point Size');
     shadowFolder.add(params, 'shadowDepthOffset', 0.0, 0.05).step(0.001).name('Depth Offset');
     shadowFolder.add(params, 'shadowBlurRadius', 0.5, 6.0).name('Blur Radius');

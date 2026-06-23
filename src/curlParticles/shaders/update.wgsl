@@ -8,13 +8,9 @@ struct Params {
   deltaFrames: f32,
   noiseScale: f32,
   noiseStrength: f32,
-  noiseSpeed: f32,
   lifetime: f32,
   expandSpeed: f32,
-  containRadius: f32,
-  containStrength: f32,
   _pad0: f32,
-  _pad1: f32,
 };
 
 @group(0) @binding(0) var<storage, read> positionsIn: array<vec4<f32>>;
@@ -181,15 +177,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let radialDir = normalize(pos + vec3<f32>(0.0001));
   pos += radialDir * params.expandSpeed * params.deltaFrames;
 
-  let noiseTime = params.time * params.noiseSpeed;
   let persistence = 0.1 + life * 0.1;
-  var flow = curl(pos * params.noiseScale, noiseTime, persistence);
+  var flow = curl(pos * params.noiseScale, params.time, persistence);
   flow /= length(flow) + 1e-4;
   pos += flow * params.noiseStrength * params.deltaFrames;
-
-  let dist = length(pos);
-  let contain = smoothstep(params.containRadius * 0.5, params.containRadius, dist);
-  pos -= radialDir * contain * params.containStrength * params.deltaFrames;
 
   positionsOut[idx] = vec4<f32>(pos, life);
 }

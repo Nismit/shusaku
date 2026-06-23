@@ -6,14 +6,8 @@ struct VParams {
   rotation: vec2<f32>,
   zoom: f32,
   particleSize: f32,
-  colorSpeed: f32,
-  time: f32,
   lightDir: vec3<f32>,
-  palette0: vec3<f32>,
-  palette1: vec3<f32>,
-  palette2: vec3<f32>,
-  palette3: vec3<f32>,
-  palette4: vec3<f32>,
+  particleColor: vec3<f32>,
 };
 
 struct FParams {
@@ -63,13 +57,6 @@ fn rotateY(angle: f32) -> mat3x3<f32> {
   return mat3x3<f32>(c, 0.0, si, 0.0, 1.0, 0.0, -si, 0.0, c);
 }
 
-fn hueShift(col: vec3<f32>, angle: f32) -> vec3<f32> {
-  let k = vec3<f32>(0.57735026919);
-  let c = cos(angle);
-  let si = sin(angle);
-  return col * c + cross(k, col) * si + k * dot(k, col) * (1.0 - c);
-}
-
 fn sRGBToLinear(c: vec3<f32>) -> vec3<f32> {
   return pow(c, vec3<f32>(2.2));
 }
@@ -88,17 +75,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut 
   let rnd = fract(sin(dot(texCoord, vec2<f32>(12.9898, 78.233))) * 43758.5453);
   let sizeRandom = mix(0.5, 2.0, pow(rnd, 5.0));
 
-  let rnd2 = fract(sin(dot(texCoord, vec2<f32>(93.9898, 67.345))) * 28461.6521);
-  let paletteIdx = i32(floor(rnd2 * 5.0));
-  var baseColor: vec3<f32>;
-  if (paletteIdx == 0) { baseColor = v.palette0; }
-  else if (paletteIdx == 1) { baseColor = v.palette1; }
-  else if (paletteIdx == 2) { baseColor = v.palette2; }
-  else if (paletteIdx == 3) { baseColor = v.palette3; }
-  else { baseColor = v.palette4; }
-
-  let hueAngle = v.colorSpeed * (v.time + rnd * 6.2831853);
-  let color = hueShift(baseColor, hueAngle);
+  let color = v.particleColor;
 
   let cameraRot = rotateX(v.rotation.x) * rotateY(v.rotation.y);
   let viewPos = cameraRot * pos;
