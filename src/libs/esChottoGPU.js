@@ -160,6 +160,19 @@ export async function chottoGPU(canvas, options = {}) {
   // フレームスコープ中はこのエンコーダに全パスを記録し、frame() 終了時に1回だけ submit する。
   // null のときは各パスが自前のエンコーダで即時 submit する（フォールバック）。
   let frameEncoder = null;
+  let frameId = 0; // frame() ごとにインクリメント。フレーム内の uniform 出現回数リセットに使う。
+
+  // BindGroup キャッシュ用に GPU リソース実体へ安定 ID を振る。
+  // (GPUTextureView / GPUBuffer / GPUSampler は実体が変わったときだけ別 ID になる)
+  const resourceIds = new WeakMap();
+  let nextResourceId = 1;
+  const idOf = (obj) => {
+    let id = resourceIds.get(obj);
+    if (id === undefined) { id = nextResourceId++; resourceIds.set(obj, id); }
+    return id;
+  };
+  // 1 グループあたりのキャッシュ上限 (ping-pong=2, bloom blur=最大8。resize 時の旧 BindGroup を溢れさせる)
+  const MAX_CACHED_BINDGROUPS = 16;
 
   // --- バインディング解決: uniforms オブジェクト → GPUBindGroup ---
   // フィールド名 → そのフィールドを含む uniform バインディング のマップを作る。
@@ -179,9 +192,22 @@ export async function chottoGPU(canvas, options = {}) {
     return { byGroup, fieldOwners };
   };
 
-  // uniform バインディング用の GPUBuffer をパイプラインごとに確保し再利用する。
+  // uniform バインディング用の GPUBuffer を確保・再利用する。
+  // フレームをバッチ化 (frame()) すると writeBuffer はキュー順で実行されるため、同一パイプラインを
+  // 1フレーム内で複数回描くと最後の書き込み値を全ドローが読んでしまう。これを避けるため
+  // フレーム内の「出現回数」ごとに別バッファを割り当てる (即時モードでは常に出現0で従来通り)。
   const ensureUniformBuffer = (pipelineObj, binding, byteSize) => {
-    const key = `${binding.group}:${binding.binding}`;
+    const bkey = `${binding.group}:${binding.binding}`;
+    let occ = 0;
+    if (frameEncoder) {
+      if (pipelineObj._uniformFrameId !== frameId) {
+        pipelineObj._uniformFrameId = frameId;
+        pipelineObj._uniformOcc.clear();
+      }
+      occ = pipelineObj._uniformOcc.get(bkey) || 0;
+      pipelineObj._uniformOcc.set(bkey, occ + 1);
+    }
+    const key = `${bkey}:${occ}`;
     let buf = pipelineObj._uniformBuffers.get(key);
     if (!buf) {
       buf = device.createBuffer({
@@ -194,10 +220,12 @@ export async function chottoGPU(canvas, options = {}) {
   };
 
   // uniforms オブジェクトを使ってパイプラインの全 group のバインドグループを生成。
+  // BindGroup はバインド対象リソースの実体が変わったときだけ作り直す (値の変化では再生成しない)。
   const resolveBindGroups = (pipelineObj, uniforms) => {
     const { byGroup, fieldOwners } = pipelineObj._bindingIndex;
     const structs = pipelineObj._structs;
     const gpuPipeline = pipelineObj.pipeline;
+    const cache = pipelineObj._bindGroupCache;
 
     // uniform バッファに書き込むデータを binding ごとに集約
     const uniformWrites = new Map(); // key → { buffer, struct, values: {field: val} }
@@ -207,36 +235,50 @@ export async function chottoGPU(canvas, options = {}) {
     for (const groupStr in byGroup) {
       const group = parseInt(groupStr, 10);
       const entries = [];
+      const sigParts = []; // バインド対象リソースの実体 ID 列 = キャッシュキー
 
       for (const b of byGroup[group]) {
+        let resource, sigObj;
         if (b.kind === 'sampler') {
-          entries.push({ binding: b.binding, resource: uniforms[b.name] || defaultSampler });
+          sigObj = uniforms[b.name] || defaultSampler;
+          resource = sigObj;
         } else if (b.kind === 'texture' || b.kind === 'storageTexture') {
           const val = uniforms[b.name];
           if (val === undefined) throw new Error(`Missing texture binding "${b.name}"`);
-          const view = val.view ? val.view : (val.createView ? val.createView() : val);
-          entries.push({ binding: b.binding, resource: view });
+          sigObj = val.view ? val.view : (val.createView ? val.createView() : val);
+          resource = sigObj;
         } else if (b.kind === 'storage') {
           const val = uniforms[b.name];
           if (val === undefined) throw new Error(`Missing storage binding "${b.name}"`);
-          const buffer = val.buffer ? val.buffer : val;
-          entries.push({ binding: b.binding, resource: { buffer } });
-        } else if (b.kind === 'uniform') {
+          sigObj = val.buffer ? val.buffer : val;
+          resource = { buffer: sigObj };
+        } else { // uniform: 値が変わっても実体 (フレーム内出現ごとに固定) は安定 → BindGroup を使い回す
           const struct = structs[b.structName];
           const buf = ensureUniformBuffer(pipelineObj, b, struct ? struct.size : 16);
           const key = `${b.group}:${b.binding}`;
           if (!uniformWrites.has(key)) uniformWrites.set(key, { buffer: buf, struct, values: {} });
-          entries.push({ binding: b.binding, resource: { buffer: buf } });
+          sigObj = buf;
+          resource = { buffer: buf };
         }
+        entries.push({ binding: b.binding, resource });
+        sigParts.push(`${b.binding}:${idOf(sigObj)}`);
       }
 
-      bindGroups.push({
-        group,
-        bindGroup: device.createBindGroup({
+      const sig = sigParts.join(',');
+      let groupCache = cache.get(group);
+      if (!groupCache) { groupCache = new Map(); cache.set(group, groupCache); }
+      let bindGroup = groupCache.get(sig);
+      if (!bindGroup) {
+        bindGroup = device.createBindGroup({
           layout: gpuPipeline.getBindGroupLayout(group),
           entries,
-        }),
-      });
+        });
+        groupCache.set(sig, bindGroup);
+        if (groupCache.size > MAX_CACHED_BINDGROUPS) {
+          groupCache.delete(groupCache.keys().next().value); // 最古を破棄 (resize 後の旧 view 等)
+        }
+      }
+      bindGroups.push({ group, bindGroup });
     }
 
     // uniform フィールド値を集約してバッファに書き込む
@@ -342,10 +384,15 @@ export async function chottoGPU(canvas, options = {}) {
       _structs: structs,
       _bindings: bindings,
       _bindingIndex: buildBindingIndex(bindings, structs),
-      _uniformBuffers: new Map(),
+      _uniformBuffers: new Map(),     // `${group}:${binding}:${occurrence}` → GPUBuffer
+      _uniformOcc: new Map(),         // フレーム内の binding 出現回数
+      _uniformFrameId: -1,
+      _bindGroupCache: new Map(),     // group → (sig → GPUBindGroup)
       dispose() {
         for (const buf of this._uniformBuffers.values()) buf.destroy();
         this._uniformBuffers.clear();
+        this._uniformOcc.clear();
+        this._bindGroupCache.clear();
       },
     };
 
@@ -371,10 +418,15 @@ export async function chottoGPU(canvas, options = {}) {
       _structs: structs,
       _bindings: bindings,
       _bindingIndex: buildBindingIndex(bindings, structs),
-      _uniformBuffers: new Map(),
+      _uniformBuffers: new Map(),     // `${group}:${binding}:${occurrence}` → GPUBuffer
+      _uniformOcc: new Map(),         // フレーム内の binding 出現回数
+      _uniformFrameId: -1,
+      _bindGroupCache: new Map(),     // group → (sig → GPUBindGroup)
       dispose() {
         for (const buf of this._uniformBuffers.values()) buf.destroy();
         this._uniformBuffers.clear();
+        this._uniformOcc.clear();
+        this._bindGroupCache.clear();
       },
     };
 
@@ -604,6 +656,7 @@ export async function chottoGPU(canvas, options = {}) {
      */
     frame(cb) {
       if (frameEncoder) { cb(this); return this; } // ネストは外側のスコープに合流
+      frameId++;
       frameEncoder = device.createCommandEncoder();
       try {
         cb(this);
