@@ -198,114 +198,117 @@ export const main = async () => {
       cosV * Math.cos(params.lightHorizontal),
     ];
     const lightVP = buildLightMatrices(lightDir, params.shadowExtent);
+    const fpsScale = Math.min(1.0, 1.0 / Math.max(dt, 0.0001) / 120.0);
 
-    // === GPGPU update (A -> B) ===
-    chotto.dispatch(updatePipeline, workgroups, {
-      positionsIn: positionsA,
-      positionsOut: positionsB,
-      defaultPositions,
-      count: PARTICLE_COUNT,
-      time: scaledTime,
-      deltaFrames,
-      noiseScale: params.noiseScale,
-      noiseStrength: params.noiseStrength,
-      lifetime: params.lifetime,
-      expandSpeed: params.expandSpeed,
-    });
-    [positionsA, positionsB] = [positionsB, positionsA];
+    // 1フレーム = 1コマンドエンコーダ。全パスを記録して frame() 終了時に1回だけ submit。
+    chotto.frame(() => {
+      // === GPGPU update (A -> B) ===
+      chotto.dispatch(updatePipeline, workgroups, {
+        positionsIn: positionsA,
+        positionsOut: positionsB,
+        defaultPositions,
+        count: PARTICLE_COUNT,
+        time: scaledTime,
+        deltaFrames,
+        noiseScale: params.noiseScale,
+        noiseStrength: params.noiseStrength,
+        lifetime: params.lifetime,
+        expandSpeed: params.expandSpeed,
+      });
+      [positionsA, positionsB] = [positionsB, positionsA];
 
-    // === Shadow map pass ===
-    if (params.shadowEnabled) {
-      shadowFBO.pass(shadowPipeline, {
-        _clear: { r: 1, g: 1, b: 1, a: 1 },
+      // === Shadow map pass ===
+      if (params.shadowEnabled) {
+        shadowFBO.pass(shadowPipeline, {
+          _clear: { r: 1, g: 1, b: 1, a: 1 },
+          _vertexCount: 4,
+          _instanceCount: drawCount,
+          positions: positionsA,
+          lightViewProj: lightVP,
+          shadowPointSize: params.shadowPointSize,
+          shadowMapSize: SHADOW_MAP_SIZE,
+          depthOffset: params.shadowDepthOffset,
+        });
+      }
+
+      // === Render: bg -> particles ===
+      renderFBO.pass(bgPipeline, {
+        bgTop: hexToRGB(params.bgTop),
+        bgBottom: hexToRGB(params.bgBottom),
+      });
+
+      renderFBO.pass(particlePipeline, {
+        _clear: false,
         _vertexCount: 4,
         _instanceCount: drawCount,
         positions: positionsA,
+        resolution: [canvas.width, canvas.height],
+        rotation: [params.rotationX, params.rotationY],
+        zoom: params.zoom,
+        particleSize: params.particleSize * basePointSize,
+        lightDir,
+        particleColor: hexToRGB(params.particleColor),
+        lightColor: scaleColor(hexToRGB(params.lightColor), params.lightIntensity),
+        ambient: params.ambient,
+        shininess: params.shininess,
+        sssIntensity: params.sssIntensity,
+        sssDistortion: params.sssDistortion,
+        sssPower: params.sssPower,
+        fresnelPower: params.fresnelPower,
+        saturation: params.saturation,
+        contrast: params.contrast,
+        exposure: params.exposure,
+        shadowColor: hexToRGB(params.shadowColor),
         lightViewProj: lightVP,
-        shadowPointSize: params.shadowPointSize,
         shadowMapSize: SHADOW_MAP_SIZE,
-        depthOffset: params.shadowDepthOffset,
+        shadowBlurRadius: params.shadowBlurRadius,
+        shadowEnabled: params.shadowEnabled ? 1.0 : 0.0,
+        shadowMap: shadowFBO,
       });
-    }
 
-    // === Render: bg -> particles ===
-    renderFBO.pass(bgPipeline, {
-      bgTop: hexToRGB(params.bgTop),
-      bgBottom: hexToRGB(params.bgBottom),
-    });
+      // === Velocity buffer ===
+      velocityFBO.pass(velocityPipeline, {
+        _clear: { r: 0, g: 0, b: 0, a: 0 },
+        _vertexCount: 4,
+        _instanceCount: drawCount,
+        positions: positionsA,
+        prevPositions: positionsB,
+        resolution: [canvas.width, canvas.height],
+        rotation: [params.rotationX, params.rotationY],
+        zoom: params.zoom,
+        particleSize: params.particleSize * basePointSize,
+      });
 
-    renderFBO.pass(particlePipeline, {
-      _clear: false,
-      _vertexCount: 4,
-      _instanceCount: drawCount,
-      positions: positionsA,
-      resolution: [canvas.width, canvas.height],
-      rotation: [params.rotationX, params.rotationY],
-      zoom: params.zoom,
-      particleSize: params.particleSize * basePointSize,
-      lightDir,
-      particleColor: hexToRGB(params.particleColor),
-      lightColor: scaleColor(hexToRGB(params.lightColor), params.lightIntensity),
-      ambient: params.ambient,
-      shininess: params.shininess,
-      sssIntensity: params.sssIntensity,
-      sssDistortion: params.sssDistortion,
-      sssPower: params.sssPower,
-      fresnelPower: params.fresnelPower,
-      saturation: params.saturation,
-      contrast: params.contrast,
-      exposure: params.exposure,
-      shadowColor: hexToRGB(params.shadowColor),
-      lightViewProj: lightVP,
-      shadowMapSize: SHADOW_MAP_SIZE,
-      shadowBlurRadius: params.shadowBlurRadius,
-      shadowEnabled: params.shadowEnabled ? 1.0 : 0.0,
-      shadowMap: shadowFBO,
-    });
+      // === Motion blur ===
+      motionBlurFBO.pass(motionBlurPipeline, {
+        uTexture: renderFBO,
+        uVelocity: velocityFBO,
+        resolution: [canvas.width, canvas.height],
+        maxDistance: 240.0,
+        motionMultiplier: params.trailAmount * fpsScale,
+        leaning: 0.5,
+      });
 
-    // === Velocity buffer ===
-    velocityFBO.pass(velocityPipeline, {
-      _clear: { r: 0, g: 0, b: 0, a: 0 },
-      _vertexCount: 4,
-      _instanceCount: drawCount,
-      positions: positionsA,
-      prevPositions: positionsB,
-      resolution: [canvas.width, canvas.height],
-      rotation: [params.rotationX, params.rotationY],
-      zoom: params.zoom,
-      particleSize: params.particleSize * basePointSize,
-    });
+      // === Bloom or passthrough ===
+      if (params.bloomEnabled) {
+        const bw = canvas.width >> 1;
+        const bh = canvas.height >> 1;
+        const texelSize = [1.0 / bw, 1.0 / bh];
 
-    // === Motion blur ===
-    const fpsScale = Math.min(1.0, 1.0 / Math.max(dt, 0.0001) / 120.0);
-    motionBlurFBO.pass(motionBlurPipeline, {
-      uTexture: renderFBO,
-      uVelocity: velocityFBO,
-      resolution: [canvas.width, canvas.height],
-      maxDistance: 240.0,
-      motionMultiplier: params.trailAmount * fpsScale,
-      leaning: 0.5,
-    });
+        brightFBO.pass(thresholdPipeline, { uTexture: motionBlurFBO, threshold: params.bloomThreshold });
 
-    // === Bloom or passthrough ===
-    if (params.bloomEnabled) {
-      const bw = canvas.width >> 1;
-      const bh = canvas.height >> 1;
-      const texelSize = [1.0 / bw, 1.0 / bh];
+        let readFBO = brightFBO;
+        for (let i = 0; i < params.bloomIterations; i++) {
+          const writeFBO = (i % 2 === 0) ? blurPing : blurPong;
+          writeFBO.pass(blurPipeline, { uTexture: readFBO, texelSize, iteration: i });
+          readFBO = writeFBO;
+        }
 
-      brightFBO.pass(thresholdPipeline, { uTexture: motionBlurFBO, threshold: params.bloomThreshold });
-
-      let readFBO = brightFBO;
-      for (let i = 0; i < params.bloomIterations; i++) {
-        const writeFBO = (i % 2 === 0) ? blurPing : blurPong;
-        writeFBO.pass(blurPipeline, { uTexture: readFBO, texelSize, iteration: i });
-        readFBO = writeFBO;
+        chotto.pass(composePipeline, { uOriginal: motionBlurFBO, uBloom: readFBO, strength: params.bloomStrength, toneMapping: params.toneMapping });
+      } else {
+        chotto.pass(screenPipeline, { uTexture: motionBlurFBO, toneMapping: params.toneMapping });
       }
-
-      chotto.pass(composePipeline, { uOriginal: motionBlurFBO, uBloom: readFBO, strength: params.bloomStrength, toneMapping: params.toneMapping });
-    } else {
-      chotto.pass(screenPipeline, { uTexture: motionBlurFBO, toneMapping: params.toneMapping });
-    }
+    });
 
     requestAnimationFrame(render);
   };

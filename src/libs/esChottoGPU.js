@@ -157,6 +157,10 @@ export async function chottoGPU(canvas, options = {}) {
 
   let resizeHandler = null;
 
+  // フレームスコープ中はこのエンコーダに全パスを記録し、frame() 終了時に1回だけ submit する。
+  // null のときは各パスが自前のエンコーダで即時 submit する（フォールバック）。
+  let frameEncoder = null;
+
   // --- バインディング解決: uniforms オブジェクト → GPUBindGroup ---
   // フィールド名 → そのフィールドを含む uniform バインディング のマップを作る。
   const buildBindingIndex = (bindings, structs) => {
@@ -381,7 +385,7 @@ export async function chottoGPU(canvas, options = {}) {
   // --- 内部: レンダーパスを実行 ---
   // resolveView を渡すと MSAA リゾルブ先になる (colorView は multisample テクスチャ)
   const runRenderPass = (colorView, depthView, pipelineOrCallback, uniforms, clear, resolveView = null) => {
-    const encoder = device.createCommandEncoder();
+    const encoder = frameEncoder ?? device.createCommandEncoder();
 
     const colorAttachment = {
       view: colorView,
@@ -417,7 +421,7 @@ export async function chottoGPU(canvas, options = {}) {
     }
 
     pass.end();
-    device.queue.submit([encoder.finish()]);
+    if (!frameEncoder) device.queue.submit([encoder.finish()]);
   };
 
   // --- フレームバッファ (オフスクリーンレンダーターゲット) ---
@@ -581,7 +585,7 @@ export async function chottoGPU(canvas, options = {}) {
 
     /** コンピュートを実行 */
     dispatch(pipelineObj, workgroups, uniforms) {
-      const encoder = device.createCommandEncoder();
+      const encoder = frameEncoder ?? device.createCommandEncoder();
       const pass = encoder.beginComputePass();
       pass.setPipeline(pipelineObj.pipeline);
       const bindGroups = resolveBindGroups(pipelineObj, uniforms || {});
@@ -589,7 +593,24 @@ export async function chottoGPU(canvas, options = {}) {
       const [x = 1, y = 1, z = 1] = workgroups;
       pass.dispatchWorkgroups(x, y, z);
       pass.end();
-      device.queue.submit([encoder.finish()]);
+      if (!frameEncoder) device.queue.submit([encoder.finish()]);
+      return this;
+    },
+
+    /**
+     * フレームスコープ。コールバック中の全パス/dispatch を単一のコマンドエンコーダに
+     * 記録し、終了時に1回だけ submit する（WebGPU 推奨の1フレーム1サブミット）。
+     * @param {(framework: Object) => void} cb
+     */
+    frame(cb) {
+      if (frameEncoder) { cb(this); return this; } // ネストは外側のスコープに合流
+      frameEncoder = device.createCommandEncoder();
+      try {
+        cb(this);
+        device.queue.submit([frameEncoder.finish()]);
+      } finally {
+        frameEncoder = null;
+      }
       return this;
     },
 
