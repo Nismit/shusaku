@@ -35,7 +35,27 @@ const hexToRGB = (hex) => [
 ];
 const scaleColor = (rgb, scale) => rgb.map((c) => c * scale);
 
+// モバイルで devtools が開けない環境向けに、エラーを画面へ可視化する。
+const showError = (label, err) => {
+  const msg = err?.stack || err?.message || String(err);
+  let el = document.getElementById('__err');
+  if (!el) {
+    el = document.createElement('pre');
+    el.id = '__err';
+    el.style.cssText =
+      'position:fixed;inset:0;margin:0;padding:16px;z-index:9999;overflow:auto;' +
+      'background:#300;color:#fdd;font:12px/1.5 monospace;white-space:pre-wrap;' +
+      'word-break:break-word;-webkit-user-select:text;user-select:text;';
+    document.body.appendChild(el);
+  }
+  el.textContent += `[${label}] ${msg}\n\n`;
+  console.error(label, err);
+};
+window.addEventListener('error', (e) => showError('error', e.error || e.message));
+window.addEventListener('unhandledrejection', (e) => showError('promise', e.reason));
+
 export const main = async () => {
+  try {
   const canvas = document.createElement('canvas');
   canvas.style.width = '100vw';
   canvas.style.height = '100vh';
@@ -389,5 +409,8 @@ export const main = async () => {
     gui.add(params, 'seed', 0, 9999).step(1).name('Seed').onChange(() => initGPGPU());
     gui.add(params, 'reset').name('Reset');
     gui.close();
+  }
+  } catch (err) {
+    showError('init', err);
   }
 };
