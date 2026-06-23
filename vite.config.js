@@ -16,6 +16,7 @@ export default defineConfig({
         tunnelRaymarching: resolve(__dirname, 'src/tunnelRaymarching/index.html'),
         mixFunctions: resolve(__dirname, 'src/mixFunctions/index.html'),
         baitBall: resolve(__dirname, 'src/baitBall/index.html'),
+        curlParticles: resolve(__dirname, 'src/curlParticles/index.html'),
       },
     },
   },
