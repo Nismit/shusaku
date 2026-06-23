@@ -14,6 +14,9 @@ struct FParams {
   lightColor: vec3<f32>,
   ambient: f32,
   shininess: f32,
+  sssIntensity: f32,
+  sssDistortion: f32,
+  sssPower: f32,
   saturation: f32,
   contrast: f32,
   exposure: f32,
@@ -187,6 +190,11 @@ fn fs(in: VOut) -> @location(0) vec4<f32> {
 
   let shadowAmount = 1.0 - shadowMask;
   color = mix(color, shadowCol, shadowAmount);
+
+  // Translucency: back-light scattered through the particle
+  let sssDir = normalize(lightDir + normal * f.sssDistortion);
+  let sssDot = pow(max(dot(viewDir, -sssDir), 0.0), f.sssPower);
+  color += baseColor * lightCol * sssDot * f.sssIntensity;
 
   let luma = dot(color, vec3<f32>(0.299, 0.587, 0.114));
   color = mix(vec3<f32>(luma), color, f.saturation);

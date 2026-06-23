@@ -65,7 +65,7 @@ export const main = async () => {
     rotationX: 0.3,
     rotationY: 0.0,
     zoom: 2.3,
-    autoRotate: true,
+    autoRotate: false,
     autoRotateSpeed: 0.12,
     // Lighting
     lightVertical: 1.1,
@@ -74,6 +74,9 @@ export const main = async () => {
     lightIntensity: 1.0,
     ambient: 0.56,
     shininess: 48.0,
+    sssIntensity: 0.35,
+    sssDistortion: 0.2,
+    sssPower: 2.0,
     saturation: 1.25,
     contrast: 1.12,
     exposure: 0.75,
@@ -244,6 +247,9 @@ export const main = async () => {
       lightColor: scaleColor(hexToRGB(params.lightColor), params.lightIntensity),
       ambient: params.ambient,
       shininess: params.shininess,
+      sssIntensity: params.sssIntensity,
+      sssDistortion: params.sssDistortion,
+      sssPower: params.sssPower,
       saturation: params.saturation,
       contrast: params.contrast,
       exposure: params.exposure,
@@ -335,6 +341,9 @@ export const main = async () => {
     lightFolder.add(params, 'lightIntensity', 0.0, 3.0, 0.05).name('Light Intensity');
     lightFolder.add(params, 'ambient', 0.0, 1.2, 0.02).name('Ambient');
     lightFolder.add(params, 'shininess', 4.0, 128.0).name('Shininess');
+    lightFolder.add(params, 'sssIntensity', 0.0, 1.5, 0.05).name('SSS Intensity');
+    lightFolder.add(params, 'sssDistortion', 0.0, 1.0, 0.05).name('SSS Distortion');
+    lightFolder.add(params, 'sssPower', 0.5, 8.0, 0.5).name('SSS Power');
     lightFolder.add(params, 'saturation', 0.0, 2.5, 0.05).name('Saturation');
     lightFolder.add(params, 'contrast', 0.8, 1.8, 0.02).name('Contrast');
     lightFolder.add(params, 'exposure', 0.2, 2.5, 0.05).name('Exposure');
