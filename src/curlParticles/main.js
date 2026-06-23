@@ -102,7 +102,8 @@ export const main = async () => {
     spawnRadius: 0.2,
     expandSpeed: 0.0,
     particleSize: 0.5,
-    particleAmount: 1.0,
+    particleAmount: IS_MOBILE ? 0.5 : 1.0, // モバイルは初期値を下げて快適域から開始
+
     // Camera
     rotationX: 0.3,
     rotationY: 0.0,
