@@ -177,9 +177,18 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let radialDir = normalize(pos + vec3<f32>(0.0001));
   pos += radialDir * params.expandSpeed * params.deltaFrames;
 
+  let birthPhase = 1.0 - smoothstep(0.08, 0.30, life);
+  let curlPhase = smoothstep(0.12, 0.35, life) * (1.0 - smoothstep(0.72, 0.96, life));
+  let decayPhase = smoothstep(0.68, 0.96, life);
+
   let persistence = 0.1 + life * 0.1;
   var flow = curl(pos * params.noiseScale, params.time, persistence);
-  flow /= length(flow) + 1e-4;
+  flow /= sqrt(length(flow) + 1e-4);
+
+  let swirlDir = normalize(vec3<f32>(-pos.z, 0.0, pos.x) + vec3<f32>(0.0001));
+  let radialFlow = radialDir * birthPhase - radialDir * decayPhase * 0.55;
+  flow = flow * mix(0.45, 1.15, curlPhase) + swirlDir * mix(0.18, 0.48, curlPhase) + radialFlow * 0.65;
+
   pos += flow * params.noiseStrength * params.deltaFrames;
 
   positionsOut[idx] = vec4<f32>(pos, life);
