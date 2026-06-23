@@ -181,7 +181,6 @@ export const main = async () => {
   const particlePipeline = chotto.createPipeline({
     vertex: particleWGSL, fragment: particleWGSL,
     format: RENDER_FORMAT, topology: 'triangle-strip', depthTest: true, samples: MSAA,
-    constants: { PCF_TAPS },
   });
 
   const velocityPipeline = chotto.createPipeline({
@@ -310,6 +309,7 @@ export const main = async () => {
             shadowMapSize: SHADOW_MAP_SIZE,
             shadowBlurRadius: params.shadowBlurRadius,
             shadowEnabled: params.shadowEnabled ? 1.0 : 0.0,
+            pcfTaps: PCF_TAPS,
             shadowMap: shadowFBO,
           },
         },

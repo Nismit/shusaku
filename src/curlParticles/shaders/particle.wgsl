@@ -29,7 +29,7 @@ struct SParams {
   shadowMapSize: f32,
   shadowBlurRadius: f32,
   shadowEnabled: f32,
-  _pad: f32,
+  pcfTaps: i32, // シャドウ PCF タップ数 (モバイルで削減)
 };
 
 @group(0) @binding(0) var<storage, read> positions: array<vec4<f32>>;
@@ -123,8 +123,6 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut 
   return out;
 }
 
-override PCF_TAPS: i32 = 12; // パイプライン生成時に上書き (モバイルで削減)
-
 fn pcfRotationNoise(p: vec2<f32>) -> f32 {
   return fract(52.9829189 * fract(dot(p, vec2<f32>(0.06711056, 0.00583715))));
 }
@@ -137,17 +135,19 @@ fn sampleShadow(shadowCoord: vec3<f32>, fragCoord: vec2<f32>) -> f32 {
   let currentDepth = shadowCoord.z;
   let texelSize = 1.0 / s.shadowMapSize;
   let phi = pcfRotationNoise(fragCoord) * 6.28318;
+  let taps = s.pcfTaps;
+  let tapsF = f32(taps);
   var sum = 0.0;
 
-  for (var i = 0; i < PCF_TAPS; i++) {
-    let r = sqrt((f32(i) + 0.5) / f32(PCF_TAPS));
+  for (var i = 0; i < taps; i++) {
+    let r = sqrt((f32(i) + 0.5) / tapsF);
     let theta = f32(i) * 2.39996323 + phi;
     let off = r * vec2<f32>(cos(theta), sin(theta)) * texelSize * s.shadowBlurRadius;
     let storedDepth = textureSampleLevel(shadowMap, shadowSampler, uv + off, 0.0).r;
     sum += step(currentDepth, storedDepth);
   }
 
-  return sum / f32(PCF_TAPS);
+  return sum / tapsF;
 }
 
 @fragment
