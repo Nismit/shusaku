@@ -231,40 +231,46 @@ export const main = async () => {
         });
       }
 
-      // === Render: bg -> particles ===
-      renderFBO.pass(bgPipeline, {
-        bgTop: hexToRGB(params.bgTop),
-        bgBottom: hexToRGB(params.bgBottom),
-      });
-
-      renderFBO.pass(particlePipeline, {
-        _clear: false,
-        _vertexCount: 4,
-        _instanceCount: drawCount,
-        positions: positionsA,
-        resolution: [canvas.width, canvas.height],
-        rotation: [params.rotationX, params.rotationY],
-        zoom: params.zoom,
-        particleSize: params.particleSize * basePointSize,
-        lightDir,
-        particleColor: hexToRGB(params.particleColor),
-        lightColor: scaleColor(hexToRGB(params.lightColor), params.lightIntensity),
-        ambient: params.ambient,
-        shininess: params.shininess,
-        sssIntensity: params.sssIntensity,
-        sssDistortion: params.sssDistortion,
-        sssPower: params.sssPower,
-        fresnelPower: params.fresnelPower,
-        saturation: params.saturation,
-        contrast: params.contrast,
-        exposure: params.exposure,
-        shadowColor: hexToRGB(params.shadowColor),
-        lightViewProj: lightVP,
-        shadowMapSize: SHADOW_MAP_SIZE,
-        shadowBlurRadius: params.shadowBlurRadius,
-        shadowEnabled: params.shadowEnabled ? 1.0 : 0.0,
-        shadowMap: shadowFBO,
-      });
+      // === Render: bg -> particles (同一レンダーパスに統合 → MSAA リゾルブ1回) ===
+      renderFBO.pass([
+        {
+          pipeline: bgPipeline,
+          uniforms: {
+            bgTop: hexToRGB(params.bgTop),
+            bgBottom: hexToRGB(params.bgBottom),
+          },
+        },
+        {
+          pipeline: particlePipeline,
+          uniforms: {
+            _vertexCount: 4,
+            _instanceCount: drawCount,
+            positions: positionsA,
+            resolution: [canvas.width, canvas.height],
+            rotation: [params.rotationX, params.rotationY],
+            zoom: params.zoom,
+            particleSize: params.particleSize * basePointSize,
+            lightDir,
+            particleColor: hexToRGB(params.particleColor),
+            lightColor: scaleColor(hexToRGB(params.lightColor), params.lightIntensity),
+            ambient: params.ambient,
+            shininess: params.shininess,
+            sssIntensity: params.sssIntensity,
+            sssDistortion: params.sssDistortion,
+            sssPower: params.sssPower,
+            fresnelPower: params.fresnelPower,
+            saturation: params.saturation,
+            contrast: params.contrast,
+            exposure: params.exposure,
+            shadowColor: hexToRGB(params.shadowColor),
+            lightViewProj: lightVP,
+            shadowMapSize: SHADOW_MAP_SIZE,
+            shadowBlurRadius: params.shadowBlurRadius,
+            shadowEnabled: params.shadowEnabled ? 1.0 : 0.0,
+            shadowMap: shadowFBO,
+          },
+        },
+      ]);
 
       // === Velocity buffer ===
       velocityFBO.pass(velocityPipeline, {

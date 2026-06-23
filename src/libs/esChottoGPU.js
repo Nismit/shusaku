@@ -435,9 +435,12 @@ export async function chottoGPU(canvas, options = {}) {
   }
 
   // --- 内部: レンダーパスを実行 ---
-  // resolveView を渡すと MSAA リゾルブ先になる (colorView は multisample テクスチャ)
-  const runRenderPass = (colorView, depthView, pipelineOrCallback, uniforms, clear, resolveView = null) => {
+  // draws: [{ pipeline, uniforms }] の配列。複数指定すると同一レンダーパス内に順に記録され、
+  // MSAA リゾルブ (resolveView) もパス末尾で1回だけ行われる。
+  // clear / loadOp は先頭ドローの uniforms._clear で決まる。
+  const runRenderPass = (colorView, depthView, draws, resolveView = null) => {
     const encoder = frameEncoder ?? device.createCommandEncoder();
+    const clear = draws[0].uniforms?._clear;
 
     const colorAttachment = {
       view: colorView,
@@ -459,22 +462,24 @@ export async function chottoGPU(canvas, options = {}) {
 
     const pass = encoder.beginRenderPass(passDesc);
 
-    if (typeof pipelineOrCallback === 'function') {
-      pipelineOrCallback(pass);
-    } else {
-      const pipelineObj = pipelineOrCallback;
-      pass.setPipeline(pipelineObj.pipeline);
-      const bindGroups = resolveBindGroups(pipelineObj, uniforms || {});
-      applyBindGroups(pass, bindGroups);
+    for (const { pipeline, uniforms } of draws) {
+      if (typeof pipeline === 'function') {
+        pipeline(pass);
+        continue;
+      }
+      pass.setPipeline(pipeline.pipeline);
+      applyBindGroups(pass, resolveBindGroups(pipeline, uniforms || {}));
       // フルスクリーンクアッド (3頂点) かカスタムか
-      const vertexCount = uniforms?._vertexCount ?? 3;
-      const instanceCount = uniforms?._instanceCount ?? 1;
-      pass.draw(vertexCount, instanceCount);
+      pass.draw(uniforms?._vertexCount ?? 3, uniforms?._instanceCount ?? 1);
     }
 
     pass.end();
     if (!frameEncoder) device.queue.submit([encoder.finish()]);
   };
+
+  // pass() 引数を draws 配列に正規化。単一の pipeline/callback も配列も受ける。
+  const toDraws = (arg, uniforms) =>
+    Array.isArray(arg) ? arg : [{ pipeline: arg, uniforms }];
 
   // --- フレームバッファ (オフスクリーンレンダーターゲット) ---
   function createFramebuffer(width, height, options = {}) {
@@ -528,12 +533,14 @@ export async function chottoGPU(canvas, options = {}) {
         }
       },
 
-      pass(pipelineOrCallback, uniforms) {
+      // 単一の pipeline/callback、または [{ pipeline, uniforms }] 配列 (1パス複数ドロー) を受ける。
+      pass(arg, uniforms) {
+        const draws = toDraws(arg, uniforms);
         if (samples > 1) {
           // multisample に描画 → texture (単一サンプル) にリゾルブ
-          runRenderPass(this.msView, this.depthView, pipelineOrCallback, uniforms, uniforms?._clear, this.view);
+          runRenderPass(this.msView, this.depthView, draws, this.view);
         } else {
-          runRenderPass(this.view, this.depthView, pipelineOrCallback, uniforms, uniforms?._clear);
+          runRenderPass(this.view, this.depthView, draws);
         }
         return this;
       },
@@ -628,10 +635,10 @@ export async function chottoGPU(canvas, options = {}) {
     createFramebuffer,
     createBuffer,
 
-    /** 画面 (canvas) に出力 */
-    pass(pipelineOrCallback, uniforms) {
+    /** 画面 (canvas) に出力。単一 pipeline/callback または draws 配列を受ける。 */
+    pass(arg, uniforms) {
       const view = context.getCurrentTexture().createView();
-      runRenderPass(view, null, pipelineOrCallback, uniforms, uniforms?._clear);
+      runRenderPass(view, null, toDraws(arg, uniforms));
       return this;
     },
 
