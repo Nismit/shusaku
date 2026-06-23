@@ -36,24 +36,34 @@ const hexToRGB = (hex) => [
 const scaleColor = (rgb, scale) => rgb.map((c) => c * scale);
 
 // モバイルで devtools が開けない環境向けに、エラーを画面へ可視化する。
+// オーバーレイ(コピー可能なスタック全体) + 初回 alert(確実に前面表示) の二段構え。
 const _seenErrors = new Set();
 const showError = (label, err) => {
   const msg = err?.stack || err?.message || String(err);
+  const short = err?.message || String(err);
   const key = `${label}:${msg}`;
-  if (_seenErrors.has(key)) return; // 毎フレーム同じ検証エラーが出ても1回だけ表示
+  if (_seenErrors.has(key)) return; // 毎フレーム同じ検証エラーが出ても1回だけ
   _seenErrors.add(key);
-  let el = document.getElementById('__err');
-  if (!el) {
-    el = document.createElement('pre');
-    el.id = '__err';
-    el.style.cssText =
-      'position:fixed;inset:0;margin:0;padding:16px;z-index:9999;overflow:auto;' +
-      'background:#300;color:#fdd;font:12px/1.5 monospace;white-space:pre-wrap;' +
-      'word-break:break-word;-webkit-user-select:text;user-select:text;';
-    document.body.appendChild(el);
-  }
-  el.textContent += `[${label}] ${msg}\n\n`;
   console.error(label, err);
+
+  const append = () => {
+    let el = document.getElementById('__err');
+    if (!el) {
+      el = document.createElement('pre');
+      el.id = '__err';
+      el.style.cssText =
+        'position:fixed;inset:0;margin:0;padding:16px;z-index:2147483647;overflow:auto;' +
+        'background:#300;color:#fdd;font:12px/1.5 monospace;white-space:pre-wrap;' +
+        'word-break:break-word;-webkit-user-select:text;user-select:text;';
+      (document.body || document.documentElement).appendChild(el);
+    }
+    el.textContent += `[${label}] ${msg}\n\n`;
+  };
+  if (document.body) append();
+  else window.addEventListener('DOMContentLoaded', append);
+
+  // alert は OS ダイアログで確実に出る。レイアウト/CSS に影響されない。
+  try { alert(`[${label}] ${short}`); } catch (_) { /* noop */ }
 };
 window.addEventListener('error', (e) => showError('error', e.error || e.message));
 window.addEventListener('unhandledrejection', (e) => showError('promise', e.reason));
