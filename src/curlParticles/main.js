@@ -90,6 +90,8 @@ export const main = async () => {
     shadowDepthOffset: 0.01,
     shadowBlurRadius: 2.0,
     shadowExtent: 0.6,
+    // Tone mapping
+    toneMapping: 1.0,
     // Bloom
     bloomEnabled: false,
     bloomThreshold: 1.0,
@@ -292,9 +294,9 @@ export const main = async () => {
         readFBO = writeFBO;
       }
 
-      chotto.pass(composePipeline, { uOriginal: motionBlurFBO, uBloom: readFBO, strength: params.bloomStrength });
+      chotto.pass(composePipeline, { uOriginal: motionBlurFBO, uBloom: readFBO, strength: params.bloomStrength, toneMapping: params.toneMapping });
     } else {
-      chotto.pass(screenPipeline, { uTexture: motionBlurFBO });
+      chotto.pass(screenPipeline, { uTexture: motionBlurFBO, toneMapping: params.toneMapping });
     }
 
     requestAnimationFrame(render);
@@ -336,6 +338,7 @@ export const main = async () => {
     lightFolder.add(params, 'saturation', 0.0, 2.5, 0.05).name('Saturation');
     lightFolder.add(params, 'contrast', 0.8, 1.8, 0.02).name('Contrast');
     lightFolder.add(params, 'exposure', 0.2, 2.5, 0.05).name('Exposure');
+    lightFolder.add(params, 'toneMapping', 0.0, 1.0, 0.05).name('Tone Mapping');
 
     const colorFolder = gui.addFolder('Colors');
     colorFolder.addColor(params, 'particleColor').name('Particle');
