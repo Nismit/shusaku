@@ -136,6 +136,11 @@ export async function chottoGPU(canvas, options = {}) {
     requiredLimits: options.requiredLimits || {},
   });
 
+  // WebGPU の検証エラーは例外ではなく uncapturederror で非同期通知される。
+  // (try/catch では捕まらないため、ここで拾って onError か console に流す)
+  const onError = options.onError || ((err) => console.error('WebGPU:', err));
+  device.addEventListener('uncapturederror', (e) => onError(e.error));
+
   const context = canvas.getContext('webgpu');
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: 'premultiplied' });

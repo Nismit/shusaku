@@ -36,8 +36,12 @@ const hexToRGB = (hex) => [
 const scaleColor = (rgb, scale) => rgb.map((c) => c * scale);
 
 // モバイルで devtools が開けない環境向けに、エラーを画面へ可視化する。
+const _seenErrors = new Set();
 const showError = (label, err) => {
   const msg = err?.stack || err?.message || String(err);
+  const key = `${label}:${msg}`;
+  if (_seenErrors.has(key)) return; // 毎フレーム同じ検証エラーが出ても1回だけ表示
+  _seenErrors.add(key);
   let el = document.getElementById('__err');
   if (!el) {
     el = document.createElement('pre');
@@ -67,7 +71,9 @@ export const main = async () => {
   canvas.width = Math.floor(window.innerWidth * initialPixelRatio);
   canvas.height = Math.floor(window.innerHeight * initialPixelRatio);
 
-  const chotto = await chottoGPU(canvas);
+  const chotto = await chottoGPU(canvas, {
+    onError: (err) => showError('gpu', err),
+  });
 
   const getBasePointSize = (w, h) => {
     const aspect = w / h;
