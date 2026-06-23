@@ -123,7 +123,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut 
   return out;
 }
 
-const PCF_TAPS = 12;
+override PCF_TAPS: i32 = 12; // パイプライン生成時に上書き (モバイルで削減)
 
 fn pcfRotationNoise(p: vec2<f32>) -> f32 {
   return fract(52.9829189 * fract(dot(p, vec2<f32>(0.06711056, 0.00583715))));

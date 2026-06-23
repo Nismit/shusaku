@@ -346,17 +346,22 @@ export async function chottoGPU(canvas, options = {}) {
       writeMask: t.writeMask,
     }));
 
+    // override 定数 (WGSL の `override`)。パイプライン生成時に確定するためループ展開が効く。
+    const constants = opts.constants;
+
     const descriptor = {
       layout: 'auto',
       vertex: {
         module: vertexModule,
         entryPoint: opts.vertexEntry || 'vs',
         buffers: opts.vertexBuffers || [],
+        ...(constants && { constants }),
       },
       fragment: {
         module: fragmentModule,
         entryPoint: opts.fragmentEntry || 'fs',
         targets,
+        ...(constants && { constants }),
       },
       primitive: {
         topology: opts.topology || 'triangle-list',

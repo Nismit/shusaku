@@ -20,7 +20,13 @@ const PARTICLE_COUNT = 512 * 512;
 const WORKGROUP_SIZE = 64;
 const RENDER_FORMAT = 'rgba16float';
 const SHADOW_MAP_SIZE = 1024;
-const MSAA = 4;
+
+// モバイル判定: フィルレート/帯域が低い端末ではフラグメント律速 (オーバードロー × PCF) を緩和する。
+const ua = navigator.userAgent;
+const IS_MOBILE = /Android|iPhone|iPod/i.test(ua) || (/iPad|Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+
+const MSAA = IS_MOBILE ? 1 : 4;     // モバイルは MSAA オフ
+const PCF_TAPS = IS_MOBILE ? 6 : 12; // モバイルはシャドウ PCF を半減
 
 const hexToRGB = (hex) => [
   parseInt(hex.slice(1, 3), 16) / 255,
@@ -139,6 +145,7 @@ export const main = async () => {
   const particlePipeline = chotto.createPipeline({
     vertex: particleWGSL, fragment: particleWGSL,
     format: RENDER_FORMAT, topology: 'triangle-strip', depthTest: true, samples: MSAA,
+    constants: { PCF_TAPS },
   });
 
   const velocityPipeline = chotto.createPipeline({
