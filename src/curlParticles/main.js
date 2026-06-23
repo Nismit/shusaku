@@ -64,7 +64,7 @@ export const main = async () => {
     // Camera
     rotationX: 0.3,
     rotationY: 0.0,
-    zoom: 2.3,
+    zoom: 3.2,
     autoRotate: false,
     autoRotateSpeed: 0.12,
     // Lighting
@@ -77,9 +77,10 @@ export const main = async () => {
     sssIntensity: 0.35,
     sssDistortion: 0.2,
     sssPower: 2.0,
+    fresnelPower: 3.0,
     saturation: 1.25,
     contrast: 1.12,
-    exposure: 0.75,
+    exposure: 1.05,
     // Colors
     particleColor: '#ffffff',
     shadowColor: '#2f4c52',
@@ -250,6 +251,7 @@ export const main = async () => {
       sssIntensity: params.sssIntensity,
       sssDistortion: params.sssDistortion,
       sssPower: params.sssPower,
+      fresnelPower: params.fresnelPower,
       saturation: params.saturation,
       contrast: params.contrast,
       exposure: params.exposure,
@@ -330,7 +332,7 @@ export const main = async () => {
     const cameraFolder = gui.addFolder('Camera');
     cameraFolder.add(params, 'rotationX', -1.57, 1.57).name('Vertical');
     cameraFolder.add(params, 'rotationY', -3.14, 3.14).name('Horizontal').listen();
-    cameraFolder.add(params, 'zoom', 0.5, 3.0).name('Zoom');
+    cameraFolder.add(params, 'zoom', 2.0, 5.0).name('Zoom');
     cameraFolder.add(params, 'autoRotate').name('Auto Rotate');
     cameraFolder.add(params, 'autoRotateSpeed', 0.0, 0.5).name('Rotate Speed');
 
@@ -341,6 +343,7 @@ export const main = async () => {
     lightFolder.add(params, 'lightIntensity', 0.0, 3.0, 0.05).name('Light Intensity');
     lightFolder.add(params, 'ambient', 0.0, 1.2, 0.02).name('Ambient');
     lightFolder.add(params, 'shininess', 4.0, 128.0).name('Shininess');
+    lightFolder.add(params, 'fresnelPower', 1.0, 8.0, 0.5).name('Fresnel Power');
     lightFolder.add(params, 'sssIntensity', 0.0, 1.5, 0.05).name('SSS Intensity');
     lightFolder.add(params, 'sssDistortion', 0.0, 1.0, 0.05).name('SSS Distortion');
     lightFolder.add(params, 'sssPower', 0.5, 8.0, 0.5).name('SSS Power');

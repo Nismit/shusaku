@@ -17,6 +17,7 @@ struct FParams {
   sssIntensity: f32,
   sssDistortion: f32,
   sssPower: f32,
+  fresnelPower: f32,
   saturation: f32,
   contrast: f32,
   exposure: f32,
@@ -173,18 +174,18 @@ fn fs(in: VOut) -> @location(0) vec4<f32> {
   let halfDir = normalize(lightDir + viewDir);
   let spec = pow(max(dot(normal, halfDir), 0.0), f.shininess);
 
-  let fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 1.0);
+  let fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), f.fresnelPower);
 
   var shadowMask = 1.0;
   if (s.shadowEnabled > 0.5) {
     shadowMask = sampleShadow(in.shadowCoord, in.position.xy);
   }
-  shadowMask = pow(shadowMask, 3.0);
+  shadowMask = pow(shadowMask, 2.0);
 
   let ambient = baseColor * f.ambient;
   let diffuseTerm = baseColor * (0.8 * diff);
-  let specularTerm = lightCol * (0.6 * spec);
-  let rimTerm = baseColor * (0.4 * fresnel);
+  let specularTerm = lightCol * (0.8 * spec);
+  let rimTerm = lightCol * (0.5 * fresnel);
 
   var color = ambient + (diffuseTerm + specularTerm + rimTerm) * shadowMask;
 
