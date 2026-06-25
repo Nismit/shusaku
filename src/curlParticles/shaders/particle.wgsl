@@ -7,7 +7,9 @@ struct VParams {
   zoom: f32,
   particleSize: f32,
   lightDir: vec3<f32>,
-  particleColor: vec3<f32>,
+  particleColor: vec3<f32>,   // 誕生時カラー (life ≈ 0)
+  particleColorB: vec3<f32>,  // ピーク時カラー (life ≈ 0.5)
+  particleColorC: vec3<f32>,  // 消滅時カラー (life ≈ 1)
 };
 
 struct FParams {
@@ -79,7 +81,10 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut 
   let rnd = fract(sin(dot(texCoord, vec2<f32>(12.9898, 78.233))) * 43758.5453);
   let sizeRandom = mix(0.5, 2.0, pow(rnd, 5.0));
 
-  let color = v.particleColor;
+  // ライフサイクルに沿った3点グラデーション: 誕生 → ピーク → 消滅
+  let youngPhase = smoothstep(0.0, 0.38, life);
+  let oldPhase   = smoothstep(0.52, 0.92, life);
+  let color = mix(mix(v.particleColor, v.particleColorB, youngPhase), v.particleColorC, oldPhase);
 
   let cameraRot = rotateX(v.rotation.x) * rotateY(v.rotation.y);
   let viewPos = cameraRot * pos;

@@ -181,13 +181,23 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let curlPhase = smoothstep(0.12, 0.35, life) * (1.0 - smoothstep(0.72, 0.96, life));
   let decayPhase = smoothstep(0.68, 0.96, life);
 
-  let persistence = 0.1 + life * 0.1;
-  var flow = curl(pos * params.noiseScale, params.time, persistence);
+  // ドメインワーピング: 粗いスケール・遅い時間のカールで座標を歪めてからメインカールをサンプリング。
+  // 渦の内部が折り畳まれた複雑な形状（銀河腕・雲状）になる。
+  let persistence = 0.15 + life * 0.15;
+  let warp = curl(pos * params.noiseScale * 0.38, params.time * 0.21, 0.28);
+  let warpedPos = pos + warp * 0.17;
+  var flow = curl(warpedPos * params.noiseScale, params.time, persistence);
   flow /= sqrt(length(flow) + 1e-4);
 
-  let swirlDir = normalize(vec3<f32>(-pos.z, 0.0, pos.x) + vec3<f32>(0.0001));
+  // ねじれヘリックス: スワール方向が高さ (pos.y) に応じて回転し、螺旋状の軌跡を生む。
+  // 単純な水平スワールよりも立体感・非対称性が出る。
+  let helixAngle = pos.y * 2.8 + params.time * 0.19;
+  let helixDir = normalize(vec3<f32>(-sin(helixAngle), 0.22, cos(helixAngle)));
+
   let radialFlow = radialDir * birthPhase - radialDir * decayPhase * 0.55;
-  flow = flow * mix(0.45, 1.15, curlPhase) + swirlDir * mix(0.18, 0.48, curlPhase) + radialFlow * 0.65;
+  flow = flow * mix(0.40, 1.05, curlPhase)
+       + helixDir * mix(0.12, 0.40, curlPhase)
+       + radialFlow * 0.65;
 
   pos += flow * params.noiseStrength * params.deltaFrames;
 

@@ -79,20 +79,22 @@ export const main = async () => {
     lightHorizontal: -1.57,
     lightColor: '#ffffff',
     lightIntensity: 1.0,
-    ambient: 0.56,
-    shininess: 48.0,
-    sssIntensity: 0.35,
-    sssDistortion: 0.2,
+    ambient: 0.42,
+    shininess: 56.0,
+    sssIntensity: 0.45,
+    sssDistortion: 0.18,
     sssPower: 2.0,
-    fresnelPower: 3.0,
-    saturation: 1.25,
-    contrast: 1.12,
-    exposure: 1.05,
+    fresnelPower: 2.5,
+    saturation: 1.35,
+    contrast: 1.10,
+    exposure: 1.10,
     // Colors
-    particleColor: '#ffffff',
-    shadowColor: '#2f4c52',
-    bgTop: '#173038',
-    bgBottom: '#3d626b',
+    particleColor: '#e8a040',   // 誕生: 琥珀/アンバー
+    particleColorB: '#f8f4ee',  // ピーク: 温かみのある白
+    particleColorC: '#40b4c8',  // 消滅: ティールシアン
+    shadowColor: '#1a3040',
+    bgTop: '#07101a',
+    bgBottom: '#0d1c2c',
     // Motion blur
     trailAmount: 0.9,
     // Shadow
@@ -259,6 +261,8 @@ export const main = async () => {
             particleSize: params.particleSize * basePointSize,
             lightDir,
             particleColor: hexToRGB(params.particleColor),
+            particleColorB: hexToRGB(params.particleColorB),
+            particleColorC: hexToRGB(params.particleColorC),
             lightColor: scaleColor(hexToRGB(params.lightColor), params.lightIntensity),
             ambient: params.ambient,
             shininess: params.shininess,
@@ -370,7 +374,9 @@ export const main = async () => {
     lightFolder.add(params, 'toneMapping', 0.0, 1.0, 0.05).name('Tone Mapping');
 
     const colorFolder = gui.addFolder('Colors');
-    colorFolder.addColor(params, 'particleColor').name('Particle');
+    colorFolder.addColor(params, 'particleColor').name('Particle (Birth)');
+    colorFolder.addColor(params, 'particleColorB').name('Particle (Peak)');
+    colorFolder.addColor(params, 'particleColorC').name('Particle (Death)');
     colorFolder.addColor(params, 'shadowColor').name('Shadow');
     colorFolder.addColor(params, 'bgTop').name('BG Top');
     colorFolder.addColor(params, 'bgBottom').name('BG Bottom');
