@@ -35,6 +35,52 @@ const hexToRGB = (hex) => [
 ];
 const scaleColor = (rgb, scale) => rgb.map((c) => c * scale);
 
+const hslToHex = (h, s, l) => {
+  s /= 100; l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => {
+    const k = (n + h / 30) % 12;
+    const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(255 * c).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+};
+
+const PALETTES = {
+  Ember: {
+    particleColor: '#e8a040', particleColorB: '#f8f4ee', particleColorC: '#40b4c8',
+    shadowColor: '#1a3040', bgTop: '#07101a', bgBottom: '#0d1c2c',
+  },
+  Aurora: {
+    particleColor: '#40e880', particleColorB: '#c8fff4', particleColorC: '#9040e8',
+    shadowColor: '#0c0824', bgTop: '#04090e', bgBottom: '#080f1e',
+  },
+  Lava: {
+    particleColor: '#ff3a10', particleColorB: '#ffc830', particleColorC: '#501008',
+    shadowColor: '#240604', bgTop: '#0a0202', bgBottom: '#150404',
+  },
+  Ocean: {
+    particleColor: '#1058e8', particleColorB: '#70e8ff', particleColorC: '#c0eeff',
+    shadowColor: '#001e32', bgTop: '#00060e', bgBottom: '#001018',
+  },
+  Dusk: {
+    particleColor: '#c83890', particleColorB: '#ffd4e8', particleColorC: '#2820a0',
+    shadowColor: '#180428', bgTop: '#060210', bgBottom: '#0e061e',
+  },
+};
+
+const makeRandomPalette = () => {
+  const hue = Math.random() * 360;
+  return {
+    particleColor:  hslToHex(hue,              88, 62),
+    particleColorB: hslToHex((hue + 15) % 360, 15, 92),
+    particleColorC: hslToHex((hue + 195) % 360, 78, 58),
+    shadowColor:    hslToHex((hue + 180) % 360, 42, 9),
+    bgTop:          hslToHex((hue + 175) % 360, 38, 4),
+    bgBottom:       hslToHex((hue + 175) % 360, 38, 6),
+  };
+};
+
 export const main = async () => {
   const canvas = document.createElement('canvas');
   canvas.style.width = '100vw';
@@ -374,12 +420,28 @@ export const main = async () => {
     lightFolder.add(params, 'toneMapping', 0.0, 1.0, 0.05).name('Tone Mapping');
 
     const colorFolder = gui.addFolder('Colors');
-    colorFolder.addColor(params, 'particleColor').name('Particle (Birth)');
-    colorFolder.addColor(params, 'particleColorB').name('Particle (Peak)');
-    colorFolder.addColor(params, 'particleColorC').name('Particle (Death)');
-    colorFolder.addColor(params, 'shadowColor').name('Shadow');
-    colorFolder.addColor(params, 'bgTop').name('BG Top');
-    colorFolder.addColor(params, 'bgBottom').name('BG Bottom');
+
+    const colorCtrls = [];
+    const applyPalette = (palette) => {
+      Object.assign(params, palette);
+      colorCtrls.forEach(c => c.updateDisplay());
+    };
+    const paletteHelper = {
+      preset: 'Ember',
+      randomize: () => applyPalette(makeRandomPalette()),
+    };
+    colorFolder.add(paletteHelper, 'preset', Object.keys(PALETTES)).name('Preset')
+      .onChange(name => applyPalette(PALETTES[name]));
+    colorFolder.add(paletteHelper, 'randomize').name('Randomize');
+
+    colorCtrls.push(
+      colorFolder.addColor(params, 'particleColor').name('Particle (Birth)'),
+      colorFolder.addColor(params, 'particleColorB').name('Particle (Peak)'),
+      colorFolder.addColor(params, 'particleColorC').name('Particle (Death)'),
+      colorFolder.addColor(params, 'shadowColor').name('Shadow'),
+      colorFolder.addColor(params, 'bgTop').name('BG Top'),
+      colorFolder.addColor(params, 'bgBottom').name('BG Bottom'),
+    );
 
     const shadowFolder = gui.addFolder('Shadow');
     shadowFolder.add(params, 'shadowPointSize', 1.0, 10.0).name('Point Size');
