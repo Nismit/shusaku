@@ -56,25 +56,25 @@ const PALETTES = {
     particleColor: '#b23a10', particleColorB: '#f0a030', particleColorC: '#1e3850',
     shadowColor: '#0b121c', bgTop: '#04080f', bgBottom: '#0a1320',
   },
-  // オーロラ: 発光ミントグリーンのピーク × 補色マゼンタの消滅
+  // オーロラ: 電光ミントのピーク × 鮮烈バイオレットの消滅 / インディゴ→ティールの空
   Aurora: {
-    particleColor: '#12506e', particleColorB: '#4be8a4', particleColorC: '#4a1a5e',
-    shadowColor: '#0a081e', bgTop: '#04060f', bgBottom: '#0a0a1e',
+    particleColor: '#0e4e86', particleColorB: '#41f0b4', particleColorC: '#7a1f86',
+    shadowColor: '#0a0824', bgTop: '#0a0820', bgBottom: '#06222a',
   },
-  // 桜: 明るいピンクのピーク × 補色ティールの消滅
+  // 桜: ホットピンクのピーク × 補色エメラルドの消滅 / プラム→ワインの夜
   Blossom: {
-    particleColor: '#9c2848', particleColorB: '#f78fb3', particleColorC: '#173f3c',
-    shadowColor: '#0f0a14', bgTop: '#07060c', bgBottom: '#120b18',
+    particleColor: '#b01f5a', particleColorB: '#ff7ec0', particleColorC: '#105244',
+    shadowColor: '#120a18', bgTop: '#100614', bgBottom: '#1c0a16',
   },
-  // 珊瑚礁: 発光ターコイズのピーク × 補色コーラルの消滅
+  // 珊瑚礁: 電光ターコイズのピーク × 灼けたコーラルの消滅 / 深海ブルー→ティール
   Reef: {
-    particleColor: '#0a5560', particleColorB: '#2ee0c8', particleColorC: '#6e2a18',
-    shadowColor: '#07110f', bgTop: '#03090d', bgBottom: '#07141c',
+    particleColor: '#0a6068', particleColorB: '#25ecd0', particleColorC: '#9a3318',
+    shadowColor: '#07140f', bgTop: '#04101c', bgBottom: '#06241e',
   },
-  // 黄昏: 夕陽オレンジのピーク × 寒いインディゴの消滅
+  // 黄昏: 夕陽ゴールドのピーク × 深いバイオレットの消滅 / インディゴ→マゼンタ地平線
   Dusk: {
-    particleColor: '#7a2858', particleColorB: '#ff9d5c', particleColorC: '#241a55',
-    shadowColor: '#0c0a24', bgTop: '#060410', bgBottom: '#0e0a1e',
+    particleColor: '#8a2a4a', particleColorB: '#ffa24f', particleColorC: '#2a1a64',
+    shadowColor: '#100a2a', bgTop: '#0e0822', bgBottom: '#281030',
   },
 };
 
@@ -83,12 +83,13 @@ const makeRandomPalette = () => {
   const peakHue  = (birthHue + 18) % 360;
   const deathHue = (birthHue + 165 + Math.random() * 30) % 360;
   return {
-    particleColor:  hslToHex(birthHue, 76, 38),
-    particleColorB: hslToHex(peakHue,  70, 60),
-    particleColorC: hslToHex(deathHue, 58, 20),
-    shadowColor:    hslToHex(deathHue, 38, 8),
-    bgTop:          hslToHex(deathHue, 26, 3),
-    bgBottom:       hslToHex(deathHue, 30, 6),
+    particleColor:  hslToHex(birthHue, 80, 40),
+    particleColorB: hslToHex(peakHue,  78, 62),
+    particleColorC: hslToHex(deathHue, 64, 22),
+    shadowColor:    hslToHex(deathHue, 42, 8),
+    // 背景は消滅色を起点に色相を僅かにずらしたデュオトーン (上→下で雰囲気が動く)
+    bgTop:          hslToHex(deathHue, 42, 4),
+    bgBottom:       hslToHex((deathHue + 28) % 360, 46, 7),
   };
 };
 
