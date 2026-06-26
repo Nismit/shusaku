@@ -1,5 +1,6 @@
 import { chottoGPU } from 'chottogpu';
 import { Timer } from '../libs/Timer.js';
+import { PointerInput } from '../libs/PointerInput.js';
 import GUI from '../libs/lil-gui.esm.min.js';
 
 import initWGSL from './shaders/init.wgsl?raw';
@@ -161,6 +162,10 @@ export const main = async () => {
     bloomThreshold: 1.0,
     bloomStrength: 0.6,
     bloomIterations: 5,
+    burstStrength: 0.032,
+    burstWaveSpeed: 1.4,
+    burstThickness: 0.14,
+    burstDecay: 2.2,
     seed: Math.floor(Math.random() * 10000),
     reset: () => initGPGPU(),
   };
@@ -178,9 +183,9 @@ export const main = async () => {
   const initF32 = new Float32Array(initAB);
   const initU32 = new Uint32Array(initAB);
 
-  // update Params: { count: u32, time: f32, deltaFrames: f32, noiseScale: f32, noiseStrength: f32, lifetime: f32, expandSpeed: f32, _pad: f32 } = 32 bytes
-  const updateUBO = chotto.buffer(32, { uniform: true });
-  const updateAB = new ArrayBuffer(32);
+  // update Params: 8 scalars (32B) + burst vec4 (16B) + burstParams vec4 (16B) = 64 bytes
+  const updateUBO = chotto.buffer(64, { uniform: true });
+  const updateAB = new ArrayBuffer(64);
   const updateF32 = new Float32Array(updateAB);
   const updateU32 = new Uint32Array(updateAB);
 
@@ -314,6 +319,29 @@ export const main = async () => {
   let lastRawTime = 0;
   let scaledTime = 0;
 
+  // --- Pointer interaction: tap/click shockwave ---
+  // 群れの動きと足並みを揃えるため、バーストの経過時間は scaledTime 基準で測る。
+  const BURST_MAX_AGE = 6.0;
+  const burst = { pos: [0, 0, 0], start: -1e9, active: false };
+
+  // カメラ行列 (rotateX * rotateY) の逆を掛けて、画面タップを z=0 平面上の世界座標へ逆投影する。
+  const rotX = (v, a) => { const c = Math.cos(a), s = Math.sin(a); return [v[0], c * v[1] + s * v[2], -s * v[1] + c * v[2]]; };
+  const rotY = (v, a) => { const c = Math.cos(a), s = Math.sin(a); return [c * v[0] - s * v[2], v[1], s * v[0] + c * v[2]]; };
+  const screenToWorld = (n) => {
+    // particle.wgsl の射影 (fov=1.5, z=viewPos.z+3) を z=0 平面で解いた逆変換。
+    const aspect = canvas.width / canvas.height;
+    const scale = 2.0 / params.zoom;
+    const view = [n.x * aspect * scale, n.y * scale, 0];
+    return rotY(rotX(view, -params.rotationX), -params.rotationY);
+  };
+
+  const pointer = new PointerInput(canvas);
+  pointer.onPress((p) => {
+    burst.pos = screenToWorld(p.normalized);
+    burst.start = scaledTime;
+    burst.active = true;
+  });
+
   const render = () => {
     const rawTime = timer.getElapsedTime();
     const rawDt = rawTime - lastRawTime;
@@ -343,6 +371,17 @@ export const main = async () => {
       updateF32[4] = params.noiseStrength;
       updateF32[5] = params.lifetime;
       updateF32[6] = params.expandSpeed;
+
+      const burstAge = scaledTime - burst.start;
+      if (burst.active && burstAge > BURST_MAX_AGE) burst.active = false;
+      updateF32[8] = burst.pos[0];
+      updateF32[9] = burst.pos[1];
+      updateF32[10] = burst.pos[2];
+      updateF32[11] = burstAge;
+      updateF32[12] = burst.active ? params.burstStrength : 0.0;
+      updateF32[13] = params.burstWaveSpeed;
+      updateF32[14] = params.burstThickness;
+      updateF32[15] = params.burstDecay;
       updateUBO.write(updateF32);
 
       chotto.dispatch((p) => {
@@ -604,6 +643,12 @@ export const main = async () => {
     bloomFolder.add(params, 'bloomThreshold', 0.0, 1.0).name('Threshold');
     bloomFolder.add(params, 'bloomStrength', 0.0, 2.0).name('Strength');
     bloomFolder.add(params, 'bloomIterations', 1, 8).step(1).name('Iterations');
+
+    const interactFolder = gui.addFolder('Interaction');
+    interactFolder.add(params, 'burstStrength', 0.0, 0.08, 0.002).name('Tap Burst');
+    interactFolder.add(params, 'burstWaveSpeed', 0.2, 4.0, 0.05).name('Wave Speed');
+    interactFolder.add(params, 'burstThickness', 0.03, 0.5, 0.01).name('Wave Width');
+    interactFolder.add(params, 'burstDecay', 0.5, 5.0, 0.1).name('Burst Decay');
 
     gui.add(params, 'seed', 0, 9999).step(1).name('Seed').onChange(() => initGPGPU());
     gui.add(params, 'reset').name('Reset');

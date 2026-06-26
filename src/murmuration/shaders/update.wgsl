@@ -11,6 +11,8 @@ struct Params {
   lifetime: f32,
   expandSpeed: f32,
   _pad0: f32,
+  burst: vec4<f32>,        // xyz = タップ位置(世界座標), w = 経過時間
+  burstParams: vec4<f32>,  // x = 強さ, y = 波の速度, z = 殻の厚み, w = 減衰率
 };
 
 @group(0) @binding(0) var<storage, read> positionsIn: array<vec4<f32>>;
@@ -200,6 +202,20 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
        + radialFlow * 0.65;
 
   pos += flow * params.noiseStrength * params.deltaFrames;
+
+  // タップ衝撃波: タップ位置を中心に膨張する球殻が粒を外側へ押し出す。
+  // 波面 (waveR) は時間とともに広がり、時間減衰でリップルがフェードする。
+  let burstStrength = params.burstParams.x;
+  if (burstStrength > 0.0) {
+    let toP = pos - params.burst.xyz;
+    let d = length(toP) + 1e-5;
+    let dir = toP / d;
+    let age = params.burst.w;
+    let waveR = params.burstParams.y * age;
+    let shell = exp(-pow((d - waveR) / max(params.burstParams.z, 1e-3), 2.0));
+    let decay = exp(-age * params.burstParams.w);
+    pos += dir * (burstStrength * shell * decay) * params.deltaFrames;
+  }
 
   positionsOut[idx] = vec4<f32>(pos, life);
 }
