@@ -653,5 +653,6 @@ export const main = async () => {
     gui.add(params, 'seed', 0, 9999).step(1).name('Seed').onChange(() => initGPGPU());
     gui.add(params, 'reset').name('Reset');
     gui.close();
+    gui.hide();
   }
 };
