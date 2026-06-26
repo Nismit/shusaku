@@ -46,26 +46,35 @@ const hslToHex = (h, s, l) => {
   return `#${f(0)}${f(8)}${f(4)}`;
 };
 
+// 各パレットは Ember 由来の設計則に従う:
+//   ピーク(B)= 最も長く見える主役。高輝度で発光する色。
+//   消滅(C) = ピークの補色側に振った暗い色。背景へ寒/暖の対比で溶ける。
+//   背景    = 消滅色側に寄せた、彩度を抑えた深い色。上端→下端で僅かに持ち上げる。
 const PALETTES = {
+  // 炎: 暖オレンジのピーク × 寒い青の消滅
   Ember: {
     particleColor: '#b23a10', particleColorB: '#f0a030', particleColorC: '#1e3850',
-    shadowColor: '#0c141e', bgTop: '#060c12', bgBottom: '#0c1520',
+    shadowColor: '#0b121c', bgTop: '#04080f', bgBottom: '#0a1320',
   },
+  // オーロラ: 発光ミントグリーンのピーク × 補色マゼンタの消滅
   Aurora: {
-    particleColor: '#185c8c', particleColorB: '#38c898', particleColorC: '#261260',
-    shadowColor: '#0c0828', bgTop: '#060412', bgBottom: '#0c081e',
+    particleColor: '#12506e', particleColorB: '#4be8a4', particleColorC: '#4a1a5e',
+    shadowColor: '#0a081e', bgTop: '#04060f', bgBottom: '#0a0a1e',
   },
+  // 桜: 明るいピンクのピーク × 補色ティールの消滅
   Blossom: {
-    particleColor: '#8c2040', particleColorB: '#f480a8', particleColorC: '#380e3c',
-    shadowColor: '#16081a', bgTop: '#0a040e', bgBottom: '#16081c',
+    particleColor: '#9c2848', particleColorB: '#f78fb3', particleColorC: '#173f3c',
+    shadowColor: '#0f0a14', bgTop: '#07060c', bgBottom: '#120b18',
   },
+  // 珊瑚礁: 発光ターコイズのピーク × 補色コーラルの消滅
   Reef: {
-    particleColor: '#0e5448', particleColorB: '#2ccc7c', particleColorC: '#082420',
-    shadowColor: '#041210', bgTop: '#020b08', bgBottom: '#061208',
+    particleColor: '#0a5560', particleColorB: '#2ee0c8', particleColorC: '#6e2a18',
+    shadowColor: '#07110f', bgTop: '#03090d', bgBottom: '#07141c',
   },
+  // 黄昏: 夕陽オレンジのピーク × 寒いインディゴの消滅
   Dusk: {
-    particleColor: '#641890', particleColorB: '#cc58b8', particleColorC: '#120c48',
-    shadowColor: '#0a0822', bgTop: '#060412', bgBottom: '#0c0820',
+    particleColor: '#7a2858', particleColorB: '#ff9d5c', particleColorC: '#241a55',
+    shadowColor: '#0c0a24', bgTop: '#060410', bgBottom: '#0e0a1e',
   },
 };
 
@@ -77,9 +86,9 @@ const makeRandomPalette = () => {
     particleColor:  hslToHex(birthHue, 76, 38),
     particleColorB: hslToHex(peakHue,  70, 60),
     particleColorC: hslToHex(deathHue, 58, 20),
-    shadowColor:    hslToHex(deathHue, 40, 8),
-    bgTop:          hslToHex(deathHue, 36, 3),
-    bgBottom:       hslToHex(deathHue, 36, 5),
+    shadowColor:    hslToHex(deathHue, 38, 8),
+    bgTop:          hslToHex(deathHue, 26, 3),
+    bgBottom:       hslToHex(deathHue, 30, 6),
   };
 };
 
@@ -134,9 +143,9 @@ export const main = async () => {
     particleColor: '#b23a10',
     particleColorB: '#f0a030',
     particleColorC: '#1e3850',
-    shadowColor: '#0c141e',
-    bgTop: '#060c12',
-    bgBottom: '#0c1520',
+    shadowColor: '#0b121c',
+    bgTop: '#04080f',
+    bgBottom: '#0a1320',
     trailAmount: 0.9,
     shadowEnabled: true,
     shadowPointSize: 1.5,
