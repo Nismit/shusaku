@@ -46,38 +46,48 @@ const hslToHex = (h, s, l) => {
   return `#${f(0)}${f(8)}${f(4)}`;
 };
 
+// 設計原則: 暗い Birth → 明るい Peak → 暗い Death。
+// Death と Background は同じ色相ファミリーに揃えてパーティクルが環境に溶け込むようにする。
 const PALETTES = {
   Ember: {
-    particleColor: '#e8a040', particleColorB: '#f8f4ee', particleColorC: '#40b4c8',
-    shadowColor: '#1a3040', bgTop: '#07101a', bgBottom: '#0d1c2c',
+    // 炎が燃えて灰になる: 暗い焦げ橙 → 明るい琥珀炎 → 冷えたスレート
+    particleColor: '#b23a10', particleColorB: '#f0a030', particleColorC: '#1e3850',
+    shadowColor: '#0c141e', bgTop: '#060c12', bgBottom: '#0c1520',
   },
   Aurora: {
-    particleColor: '#40e880', particleColorB: '#c8fff4', particleColorC: '#9040e8',
-    shadowColor: '#0c0824', bgTop: '#04090e', bgBottom: '#080f1e',
+    // 極光: 深い氷青 → 鮮やかなオーロラ緑 → 濃紺の夜空
+    particleColor: '#185c8c', particleColorB: '#38c898', particleColorC: '#261260',
+    shadowColor: '#0c0828', bgTop: '#060412', bgBottom: '#0c081e',
   },
-  Lava: {
-    particleColor: '#ff3a10', particleColorB: '#ffc830', particleColorC: '#501008',
-    shadowColor: '#240604', bgTop: '#0a0202', bgBottom: '#150404',
+  Blossom: {
+    // 桜: 暗い深紅のつぼみ → 明るい花びらピンク → 落花した暗い紫
+    particleColor: '#8c2040', particleColorB: '#f480a8', particleColorC: '#380e3c',
+    shadowColor: '#16081a', bgTop: '#0a040e', bgBottom: '#16081c',
   },
-  Ocean: {
-    particleColor: '#1058e8', particleColorB: '#70e8ff', particleColorC: '#c0eeff',
-    shadowColor: '#001e32', bgTop: '#00060e', bgBottom: '#001018',
+  Reef: {
+    // 珊瑚礁: 深い海のティール → 輝くサンゴ緑 → 暗い深海
+    particleColor: '#0e5448', particleColorB: '#2ccc7c', particleColorC: '#082420',
+    shadowColor: '#041210', bgTop: '#020b08', bgBottom: '#061208',
   },
   Dusk: {
-    particleColor: '#c83890', particleColorB: '#ffd4e8', particleColorC: '#2820a0',
-    shadowColor: '#180428', bgTop: '#060210', bgBottom: '#0e061e',
+    // 夕暮れ: 深い紫 → 明るいローズマゼンタ → 夜の藍
+    particleColor: '#641890', particleColorB: '#cc58b8', particleColorC: '#120c48',
+    shadowColor: '#0a0822', bgTop: '#060412', bgBottom: '#0c0820',
   },
 };
 
+// Birth: 暗く高彩度 / Peak: 明るく色付き / Death: 暗く対照色 + BG は Death 色相で統一
 const makeRandomPalette = () => {
-  const hue = Math.random() * 360;
+  const birthHue = Math.random() * 360;
+  const peakHue  = (birthHue + 18) % 360;
+  const deathHue = (birthHue + 165 + Math.random() * 30) % 360;
   return {
-    particleColor:  hslToHex(hue,              88, 62),
-    particleColorB: hslToHex((hue + 15) % 360, 15, 92),
-    particleColorC: hslToHex((hue + 195) % 360, 78, 58),
-    shadowColor:    hslToHex((hue + 180) % 360, 42, 9),
-    bgTop:          hslToHex((hue + 175) % 360, 38, 4),
-    bgBottom:       hslToHex((hue + 175) % 360, 38, 6),
+    particleColor:  hslToHex(birthHue, 76, 38),
+    particleColorB: hslToHex(peakHue,  70, 60),
+    particleColorC: hslToHex(deathHue, 58, 20),
+    shadowColor:    hslToHex(deathHue, 40, 8),
+    bgTop:          hslToHex(deathHue, 36, 3),
+    bgBottom:       hslToHex(deathHue, 36, 5),
   };
 };
 
@@ -134,13 +144,13 @@ export const main = async () => {
     saturation: 1.35,
     contrast: 1.10,
     exposure: 1.10,
-    // Colors
-    particleColor: '#e8a040',   // 誕生: 琥珀/アンバー
-    particleColorB: '#f8f4ee',  // ピーク: 温かみのある白
-    particleColorC: '#40b4c8',  // 消滅: ティールシアン
-    shadowColor: '#1a3040',
-    bgTop: '#07101a',
-    bgBottom: '#0d1c2c',
+    // Colors (Ember パレットがデフォルト)
+    particleColor: '#b23a10',   // 誕生: 暗い焦げ橙
+    particleColorB: '#f0a030',  // ピーク: 明るい琥珀炎
+    particleColorC: '#1e3850',  // 消滅: 冷えたスレートブルー
+    shadowColor: '#0c141e',
+    bgTop: '#060c12',
+    bgBottom: '#0c1520',
     // Motion blur
     trailAmount: 0.9,
     // Shadow
