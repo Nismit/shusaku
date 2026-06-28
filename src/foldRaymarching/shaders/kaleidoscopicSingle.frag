@@ -23,6 +23,7 @@ uniform float iExposure;
 #define PI 3.141592653589793
 #define TAU 6.283185307179586
 #define FAR 28.0
+#define sabs(x) sqrt((x)*(x) + 5e-4)
 
 mat2 rot(float a) {
   float s = sin(a);
@@ -30,51 +31,43 @@ mat2 rot(float a) {
   return mat2(c, -s, s, c);
 }
 
-float sdBox(vec3 p, vec3 b) {
-  vec3 q = abs(p) - b;
-  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+vec3 foldVec(float t) {
+  vec3 n = vec3(-0.5, -cos(PI / t), 0.0);
+  n.z = sqrt(1.0 - dot(n, n));
+  return n;
 }
 
-float sdOctahedron(vec3 p, float s) {
-  p = abs(p);
-  return (p.x + p.y + p.z - s) * 0.57735027;
-}
-
-vec3 repeatDomain(vec3 p, vec3 cell) {
-  return mod(p + cell * 0.5, cell) - cell * 0.5;
+vec3 kaleidFold(vec3 p, int t) {
+  vec3 n = foldVec(float(t));
+  for (int i = 0; i < 8; i++) {
+    if (i >= t) break;
+    p.xy = sabs(p.xy);
+    float g = dot(p, n);
+    p -= (g - sabs(g)) * n;
+  }
+  return p;
 }
 
 float mapFold(vec3 p, out float orbit) {
-  vec3 q = repeatDomain(p, vec3(1.58));
+  vec3 q = p;
   q.xy = rot(iInitRotXY) * q.xy;
   q.xz = rot(iInitRotXZ) * q.xz;
 
-  float d = 1e6;
-  float scale = 1.0;
+  q = kaleidFold(q, iFoldCount);
+  q.z -= iFoldScale * 0.67;
+  q.yz = rot(iIterRotXY) * q.yz;
+  q.xz = rot(iIterRotYZ) * q.xz;
 
-  for (int i = 0; i < 8; i++) {
-    if (i >= iFoldCount) break;
+  orbit += 0.5 + 0.5 * cos(length(q) * 3.0);
 
-    vec3 folded = abs(q);
-    folded -= vec3(0.42, 0.34, 0.28);
-    folded.xz = rot(iIterRotXY + float(i) * 0.22) * folded.xz;
-    folded.yz = rot(iIterRotYZ * float(i)) * folded.yz;
-
-    vec3 tp = folded / scale;
-    d = min(d, sdOctahedron(tp, 0.32) * scale);
-    orbit += 0.42 / (0.34 + dot(folded, folded));
-
-    q = repeatDomain(q * 1.32 + vec3(0.19, -0.13, 0.16), vec3(1.44));
-    scale *= 0.78;
-  }
-
-  return d;
+  vec3 a = vec3(0.1, 0.5, 0.1);
+  return length(q - clamp(q, -a, a)) - 0.05;
 }
 
 vec2 mapScene(vec3 p) {
   float orbit = 0.0;
   float d = mapFold(p, orbit);
-  d = max(d, sdBox(p, vec3(2.2)));
+  d = max(d, length(p) - 2.35);
   return vec2(d, orbit);
 }
 
@@ -169,7 +162,7 @@ void main() {
     float spec = pow(max(dot(n, h), 0.0), 44.0) * iSpecular * shadow;
     float rim = pow(1.0 - max(dot(n, -rd), 0.0), 3.4);
 
-    float foldTone = hit.y * 0.08 + 0.115 + length(p) * 0.045;
+    float foldTone = hit.y * 0.08 + 0.15 + length(p) * 0.045;
     vec3 base = palette(foldTone);
 
     vec3 lit = base * (iAmbient + diff * shadow * 1.25) * ao;

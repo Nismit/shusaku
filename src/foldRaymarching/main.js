@@ -2,10 +2,11 @@ import { chottoGL } from '../libs/esChottoGL.js';
 import GUI from '../libs/lil-gui.esm.min.js';
 
 import mirrorSource from './shaders/mirrorFoldTorus.frag?raw';
-import reflectRepeatSource from './shaders/reflectRepeatBox.frag?raw';
 import polarSource from './shaders/polarFoldTorus.frag?raw';
 import boxSource from './shaders/boxFoldBox.frag?raw';
 import mengerSource from './shaders/mengerFoldBox.frag?raw';
+import kaleidSingleSource from './shaders/kaleidoscopicSingle.frag?raw';
+import kaleidMultiSource from './shaders/kaleidoscopicMulti.frag?raw';
 import sortDescendingSource from './shaders/sortFoldTorus.frag?raw';
 import sortAscendingSource from './shaders/sortFoldAscending.frag?raw';
 import sortPartialSource from './shaders/sortFoldPartial.frag?raw';
@@ -17,21 +18,6 @@ const MIRROR_DEFAULTS = {
   initRotXZ: 0.0,
   iterRotXY: 0.34,
   iterRotYZ: -0.22,
-  cameraDistance: 7.5,
-  focalLength: 2.1,
-  lightHeight: 2.2,
-  ambient: 0.23,
-  specular: 0.55,
-  exposure: 1.0,
-};
-
-const REFLECT_DEFAULTS = {
-  foldCount: 3,
-  foldScale: 1.0,
-  initRotXY: 0.0,
-  initRotXZ: 0.0,
-  iterRotXY: 0.18,
-  iterRotYZ: -0.12,
   cameraDistance: 7.5,
   focalLength: 2.1,
   lightHeight: 2.2,
@@ -85,6 +71,36 @@ const MENGER_DEFAULTS = {
   exposure: 1.0,
 };
 
+const KALEID_SINGLE_DEFAULTS = {
+  foldCount: 5,
+  foldScale: 1.5,
+  initRotXY: 0.0,
+  initRotXZ: 0.0,
+  iterRotXY: -0.785,
+  iterRotYZ: 0.0,
+  cameraDistance: 7.5,
+  focalLength: 2.1,
+  lightHeight: 2.2,
+  ambient: 0.23,
+  specular: 0.55,
+  exposure: 1.0,
+};
+
+const KALEID_MULTI_DEFAULTS = {
+  foldCount: 3,
+  foldScale: 1.5,
+  initRotXY: 0.0,
+  initRotXZ: 0.0,
+  iterRotXY: 0.0,
+  iterRotYZ: 0.0,
+  cameraDistance: 7.5,
+  focalLength: 2.1,
+  lightHeight: 2.2,
+  ambient: 0.23,
+  specular: 0.55,
+  exposure: 1.0,
+};
+
 const SORT_DEFAULTS = {
   foldCount: 2,
   foldScale: 1.5,
@@ -105,10 +121,11 @@ const SHADERS = {
   'Sort Ascending': { source: sortAscendingSource, defaults: SORT_DEFAULTS },
   'Sort Partial': { source: sortPartialSource, defaults: SORT_DEFAULTS },
   'Mirror Fold': { source: mirrorSource, defaults: MIRROR_DEFAULTS },
-  'Reflect Repeat': { source: reflectRepeatSource, defaults: REFLECT_DEFAULTS },
   'Polar Fold': { source: polarSource, defaults: POLAR_DEFAULTS },
   'Box Fold': { source: boxSource, defaults: BOX_DEFAULTS },
   'Menger Fold': { source: mengerSource, defaults: MENGER_DEFAULTS },
+  'Kaleidoscopic': { source: kaleidSingleSource, defaults: KALEID_SINGLE_DEFAULTS },
+  'Kaleidoscopic Multi': { source: kaleidMultiSource, defaults: KALEID_MULTI_DEFAULTS },
 };
 
 export const main = () => {
