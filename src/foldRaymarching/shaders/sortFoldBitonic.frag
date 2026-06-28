@@ -22,11 +22,23 @@ uniform float iExposure;
 
 #define TAU 6.283185307179586
 #define FAR 28.0
+#define sabs(x) sqrt((x)*(x) + 5e-4)
 
 mat2 rot(float a) {
   float s = sin(a);
   float c = cos(a);
   return mat2(c, -s, s, c);
+}
+
+// Smooth, direction-aware compare-exchange. A hard comparator is the
+// diagonal-plane reflection max/min = (a+b +/- |a-b|)/2; replacing |a-b|
+// with sabs rounds the crease. dir = +1 sorts descending, -1 ascending.
+// sabs is a contraction, so the distance estimate stays a valid bound.
+void dsort(inout float a, inout float b, float dir) {
+  float d = dir * sabs(a - b);
+  float s = a + b;
+  a = 0.5 * (s + d);
+  b = 0.5 * (s - d);
 }
 
 // Bitonic compare-exchange network. Every comparator is a reflection: the
@@ -42,19 +54,22 @@ float mapFold(vec3 p, out float orbit) {
   q.xz = rot(iInitRotXZ) * q.xz;
 
   float absOffset = iFoldScale * 0.2;
+  vec2 nd = vec2(0.70710678);
 
   for (int i = 0; i < 8; i++) {
     if (i >= iFoldCount) break;
-    q = abs(q) - absOffset;
+    q = sabs(q) - absOffset;
 
     float dir = ((i & 1) == 0) ? 1.0 : -1.0;
 
-    if (dir * (q.x - q.y) < 0.0) q.xy = q.yx;
-    if (dir * (q.y - q.z) < 0.0) q.yz = q.zy;
-    if (dir * (q.x - q.z) < 0.0) q.xz = q.zx;
+    dsort(q.x, q.y, dir);
+    dsort(q.y, q.z, dir);
+    dsort(q.x, q.z, dir);
 
-    if (q.x + q.y < 0.0) q.xy = -q.yx;
-    if (q.y + q.z < 0.0) q.yz = -q.zy;
+    float gxy = dot(q.xy, nd);
+    q.xy -= (gxy - sabs(gxy)) * nd;
+    float gyz = dot(q.yz, nd);
+    q.yz -= (gyz - sabs(gyz)) * nd;
 
     q.xy -= 0.05;
 
