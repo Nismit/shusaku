@@ -22,6 +22,7 @@ uniform float iExposure;
 
 #define TAU 6.283185307179586
 #define FAR 28.0
+#define sabs(x) sqrt((x)*(x) + 5e-4)
 
 // Body-diagonal mirror plane normal (1,1,1)/sqrt(3) of the cubic group.
 const vec3 nDiag = vec3(0.5773502691896258);
@@ -30,6 +31,17 @@ mat2 rot(float a) {
   float s = sin(a);
   float c = cos(a);
   return mat2(c, -s, s, c);
+}
+
+// Smooth descending compare-exchange. Same diagonal-plane reflection as a
+// hard sort (max/min = (a+b +/- |a-b|)/2), but |a-b| -> sabs rounds the
+// crease so thin facet edges stop shimmering. sabs is a contraction, so the
+// distance estimate stays a valid bound (no overstep).
+void csort(inout float a, inout float b) {
+  float d = sabs(a - b);
+  float s = a + b;
+  a = 0.5 * (s + d);
+  b = 0.5 * (s - d);
 }
 
 // Exact octahedron (iq). Gives crisp crystalline facets rather than tubes.
@@ -59,13 +71,14 @@ float mapFold(vec3 p, out float orbit) {
   for (int i = 0; i < 8; i++) {
     if (i >= iFoldCount) break;
 
-    q = abs(q) - off;
+    q = sabs(q) - off;
 
-    if (q.x < q.y) q.xy = q.yx;
-    if (q.x < q.z) q.xz = q.zx;
-    if (q.y < q.z) q.yz = q.zy;
+    csort(q.x, q.y);
+    csort(q.x, q.z);
+    csort(q.y, q.z);
 
-    q -= 2.0 * min(0.0, dot(q, nDiag)) * nDiag;
+    float g = dot(q, nDiag);
+    q -= (g - sabs(g)) * nDiag;
 
     q.xy = rot(iIterRotXY) * q.xy;
     q.yz = rot(iIterRotYZ) * q.yz;
