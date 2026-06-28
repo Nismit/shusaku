@@ -10,6 +10,7 @@ import kaleidMultiSource from './shaders/kaleidoscopicMulti.frag?raw';
 import sortDescendingSource from './shaders/sortFoldTorus.frag?raw';
 import sortAscendingSource from './shaders/sortFoldAscending.frag?raw';
 import sortPartialSource from './shaders/sortFoldPartial.frag?raw';
+import sortBitonicSource from './shaders/sortFoldBitonic.frag?raw';
 import cubicSource from './shaders/cubicSymmetryFold.frag?raw';
 import icosaSource from './shaders/icosahedralKaleid.frag?raw';
 
@@ -118,6 +119,21 @@ const SORT_DEFAULTS = {
   exposure: 1.0,
 };
 
+const BITONIC_DEFAULTS = {
+  foldCount: 3,
+  foldScale: 1.5,
+  initRotXY: 0.24,
+  initRotXZ: 0.36,
+  iterRotXY: 0.5,
+  iterRotYZ: 0.5,
+  cameraDistance: 7.5,
+  focalLength: 2.1,
+  lightHeight: 2.2,
+  ambient: 0.23,
+  specular: 0.55,
+  exposure: 1.0,
+};
+
 const CUBIC_DEFAULTS = {
   foldCount: 3,
   foldScale: 1.5,
@@ -152,6 +168,7 @@ const SHADERS = {
   'Sort Descending': { source: sortDescendingSource, defaults: SORT_DEFAULTS },
   'Sort Ascending': { source: sortAscendingSource, defaults: SORT_DEFAULTS },
   'Sort Partial': { source: sortPartialSource, defaults: SORT_DEFAULTS },
+  'Sort Bitonic': { source: sortBitonicSource, defaults: BITONIC_DEFAULTS },
   'Cubic Symmetry': { source: cubicSource, defaults: CUBIC_DEFAULTS },
   'Icosahedral Kaleid': { source: icosaSource, defaults: ICOSA_DEFAULTS },
   'Mirror Fold': { source: mirrorSource, defaults: MIRROR_DEFAULTS },
