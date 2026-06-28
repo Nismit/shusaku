@@ -35,6 +35,11 @@ float sdBox(vec3 p, vec3 b) {
   return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
 }
 
+float sdOctahedron(vec3 p, float s) {
+  p = abs(p);
+  return (p.x + p.y + p.z - s) * 0.57735027;
+}
+
 vec3 repeatDomain(vec3 p, vec3 cell) {
   return mod(p + cell * 0.5, cell) - cell * 0.5;
 }
@@ -56,7 +61,7 @@ float mapFold(vec3 p, out float orbit) {
     folded.yz = rot(iIterRotYZ * float(i)) * folded.yz;
 
     vec3 tp = folded / scale;
-    d = min(d, sdBox(tp, vec3(0.24, 0.36, 0.22)) * scale);
+    d = min(d, sdOctahedron(tp, 0.32) * scale);
     orbit += 0.42 / (0.34 + dot(folded, folded));
 
     q = repeatDomain(q * 1.32 + vec3(0.19, -0.13, 0.16), vec3(1.44));
@@ -69,7 +74,7 @@ float mapFold(vec3 p, out float orbit) {
 vec2 mapScene(vec3 p) {
   float orbit = 0.0;
   float d = mapFold(p, orbit);
-  d = max(d, length(p) - 2.8);
+  d = max(d, sdBox(p, vec3(2.2)));
   return vec2(d, orbit);
 }
 
