@@ -18,6 +18,7 @@ export default defineConfig({
         mixFunctions: resolve(__dirname, 'src/mixFunctions/index.html'),
         baitBall: resolve(__dirname, 'src/baitBall/index.html'),
         murmuration: resolve(__dirname, 'src/murmuration/index.html'),
+        foldLab: resolve(__dirname, 'src/foldLab/index.html'),
       },
     },
   },
