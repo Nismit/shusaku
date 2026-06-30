@@ -20,10 +20,10 @@ uniform float iAmbient;
 uniform float iSpecular;
 uniform float iExposure;
 
+#define PI 3.141592653589793
 #define TAU 6.283185307179586
 #define FAR 28.0
-
-const vec2 h60 = vec2(-0.5, 0.8660254037844386);
+#define sabs(x) sqrt((x)*(x) + 5e-4)
 
 mat2 rot(float a) {
   float s = sin(a);
@@ -36,6 +36,12 @@ float sdBox(vec3 p, vec3 b) {
   return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
 }
 
+vec3 foldVec(float t) {
+  vec3 n = vec3(-0.5, -cos(PI / t), 0.0);
+  n.z = sqrt(1.0 - dot(n, n));
+  return n;
+}
+
 float mapFold(vec3 p, out float orbit) {
   vec3 q = p;
   q.xy = rot(iInitRotXY) * q.xy;
@@ -43,19 +49,15 @@ float mapFold(vec3 p, out float orbit) {
 
   float s = 1.0;
   float sc = 1.0 + iFoldScale * 0.5;
-  vec3 offset = vec3(1.0, 0.55, 0.7) * (sc - 1.0);
+  vec3 offset = vec3(0.9, 0.75, 0.65) * (sc - 1.0);
+  vec3 n = foldVec(5.0);
 
   for (int i = 0; i < 8; i++) {
     if (i >= iFoldCount) break;
 
-    q.z = abs(q.z);
-
-    float d1 = dot(q.xy, h60);
-    if (d1 < 0.0) q.xy -= 2.0 * d1 * h60;
-    float d2 = dot(q.xy, h60 * vec2(1.0, -1.0));
-    if (d2 < 0.0) q.xy -= 2.0 * d2 * (h60 * vec2(1.0, -1.0));
-
-    q.x = abs(q.x);
+    q.xy = sabs(q.xy);
+    float g = dot(q, n);
+    q -= (g - sabs(g)) * n;
 
     q = q * sc - offset;
     s *= sc;
@@ -66,7 +68,7 @@ float mapFold(vec3 p, out float orbit) {
     orbit += exp(-2.0 * length(q / s));
   }
 
-  return (sdBox(q, vec3(0.4, 1.0, 0.4)) - 0.05) / s;
+  return (sdBox(q, vec3(1.0)) - 0.05) / s;
 }
 
 vec2 mapScene(vec3 p) {
@@ -167,7 +169,7 @@ void main() {
     float spec = pow(max(dot(n, h), 0.0), 44.0) * iSpecular * shadow;
     float rim = pow(1.0 - max(dot(n, -rd), 0.0), 3.4);
 
-    float foldTone = hit.y * 0.08 + 0.25 + length(p) * 0.045;
+    float foldTone = hit.y * 0.08 + 0.20 + length(p) * 0.045;
     vec3 base = palette(foldTone);
 
     vec3 lit = base * (iAmbient + diff * shadow * 1.25) * ao;

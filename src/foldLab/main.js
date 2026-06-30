@@ -4,6 +4,9 @@ import GUI from '../libs/lil-gui.esm.min.js';
 import tetrahedralSource from './shaders/tetrahedralFold.frag?raw';
 import sinusoidalSource from './shaders/sinusoidalWarpFold.frag?raw';
 import hexPrismaticSource from './shaders/hexPrismaticFold.frag?raw';
+import kaleidoscopicSource from './shaders/kaleidoscopicFold.frag?raw';
+import sinusoidalBoxSource from './shaders/sinusoidalWarpBoxFold.frag?raw';
+import kaleidoWarpSource from './shaders/kaleidoWarpFold.frag?raw';
 
 const TETRAHEDRAL_DEFAULTS = {
   foldCount: 5,
@@ -50,10 +53,58 @@ const HEX_PRISMATIC_DEFAULTS = {
   exposure: 1.0,
 };
 
+const KALEIDOSCOPIC_DEFAULTS = {
+  foldCount: 5,
+  foldScale: 1.4,
+  initRotXY: 0.15,
+  initRotXZ: 0.25,
+  iterRotXY: 0.4,
+  iterRotYZ: 0.35,
+  cameraDistance: 7.5,
+  focalLength: 2.1,
+  lightHeight: 2.2,
+  ambient: 0.23,
+  specular: 0.55,
+  exposure: 1.0,
+};
+
+const SINUSOIDAL_BOX_DEFAULTS = {
+  foldCount: 3,
+  foldScale: 1.5,
+  initRotXY: 0.24,
+  initRotXZ: 0.36,
+  iterRotXY: 0.7,
+  iterRotYZ: 0.7,
+  cameraDistance: 7.5,
+  focalLength: 2.1,
+  lightHeight: 2.2,
+  ambient: 0.23,
+  specular: 0.55,
+  exposure: 1.0,
+};
+
+const KALEIDO_WARP_DEFAULTS = {
+  foldCount: 4,
+  foldScale: 1.2,
+  initRotXY: 0.15,
+  initRotXZ: 0.25,
+  iterRotXY: 0.45,
+  iterRotYZ: 0.35,
+  cameraDistance: 7.5,
+  focalLength: 2.1,
+  lightHeight: 2.2,
+  ambient: 0.23,
+  specular: 0.55,
+  exposure: 1.0,
+};
+
 const SHADERS = {
   'Tetrahedral': { source: tetrahedralSource, defaults: TETRAHEDRAL_DEFAULTS },
   'Sinusoidal Warp': { source: sinusoidalSource, defaults: SINUSOIDAL_DEFAULTS },
   'Hex Prismatic': { source: hexPrismaticSource, defaults: HEX_PRISMATIC_DEFAULTS },
+  'Kaleidoscopic': { source: kaleidoscopicSource, defaults: KALEIDOSCOPIC_DEFAULTS },
+  'Sinusoidal Box': { source: sinusoidalBoxSource, defaults: SINUSOIDAL_BOX_DEFAULTS },
+  'Kaleido Warp': { source: kaleidoWarpSource, defaults: KALEIDO_WARP_DEFAULTS },
 };
 
 export const main = () => {
