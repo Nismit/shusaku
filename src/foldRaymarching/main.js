@@ -84,9 +84,9 @@ const KALEID_SINGLE_DEFAULTS = {
   cameraDistance: 7.5,
   focalLength: 2.1,
   lightHeight: 2.2,
-  ambient: 0.23,
-  specular: 0.55,
-  exposure: 1.0,
+  ambient: 0.12,
+  specular: 0.90,
+  exposure: 1.1,
 };
 
 const KALEID_MULTI_DEFAULTS = {
@@ -99,9 +99,9 @@ const KALEID_MULTI_DEFAULTS = {
   cameraDistance: 7.5,
   focalLength: 2.1,
   lightHeight: 2.2,
-  ambient: 0.23,
-  specular: 0.55,
-  exposure: 1.0,
+  ambient: 0.12,
+  specular: 0.90,
+  exposure: 1.1,
 };
 
 const SORT_DEFAULTS = {
