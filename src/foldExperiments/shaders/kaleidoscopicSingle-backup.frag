@@ -105,10 +105,10 @@ float ambientOcclusion(vec3 p, vec3 n) {
 }
 
 vec3 palette(float t) {
-  vec3 a = vec3(0.50, 0.50, 0.50);
-  vec3 b = vec3(0.20, 0.20, 0.20);
-  vec3 c = vec3(1.0, 1.0, 1.0);
-  vec3 d = vec3(0.0, 0.05, 0.10);
+  vec3 a = vec3(0.72, 0.70, 0.68);
+  vec3 b = vec3(0.10, 0.09, 0.12);
+  vec3 c = vec3(1.0, 1.2, 0.8);
+  vec3 d = vec3(0.0, 0.20, 0.45);
   return a + b * cos(TAU * (c * t + d));
 }
 
@@ -159,15 +159,16 @@ void main() {
     float diff = max(dot(n, l), 0.0);
     float shadow = softShadow(p + n * 0.015, l);
     float ao = ambientOcclusion(p, n);
-    float spec = pow(max(dot(n, h), 0.0), 44.0) * iSpecular * shadow;
-    float rim = pow(1.0 - max(dot(n, -rd), 0.0), 3.4);
+    float NoV = max(dot(n, -rd), 0.0);
+    float spec = pow(max(dot(n, h), 0.0), 192.0) * iSpecular * shadow * 3.5;
 
     float foldTone = hit.y * 0.08 + 0.15 + length(p) * 0.045;
     vec3 base = palette(foldTone);
+    vec3 fresnel = base + (vec3(1.0) - base) * pow(1.0 - NoV, 5.0);
 
-    vec3 lit = base * (iAmbient + diff * shadow * 1.25) * ao;
-    lit += vec3(1.0, 0.98, 0.95) * spec;
-    lit += vec3(0.7, 0.72, 0.76) * rim * (0.18 + 0.22 * ao);
+    vec3 lit = base * (iAmbient * 0.4 + diff * shadow * 0.10) * ao;
+    lit += fresnel * spec;
+    lit += fresnel * pow(1.0 - NoV, 4.0) * (0.30 + 0.20 * ao);
 
     float fog = 1.0 - exp(-0.035 * hit.x * hit.x);
     color = mix(lit, color, fog);
