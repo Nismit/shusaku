@@ -174,6 +174,8 @@ void main() {
     color = mix(lit, color, fog);
   }
 
+  float vignette = smoothstep(1.35, 0.25, length(uv));
+  color *= mix(0.62, 1.08, vignette);
   color = vec3(1.0) - exp(-color * iExposure);
   color = pow(color, vec3(0.4545));
 
