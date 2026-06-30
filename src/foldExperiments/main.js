@@ -16,6 +16,7 @@ const DEFAULTS = {
   ambient: 0.12,
   specular: 0.90,
   exposure: 1.1,
+  sabsMode: 0,
 };
 
 export const main = () => {
@@ -70,6 +71,8 @@ export const main = () => {
 
   const gui = new GUI({ title: 'Fold Experiments' });
 
+  const SABS_MODES = { 'sqrt (default)': 0, 'max': 1, 'tanh': 2, 'exp decay': 3 };
+  gui.add(params, 'sabsMode', SABS_MODES).name('Smooth Abs');
   gui.add(params, 'foldCount', 1, 8, 1).name('Fold Count');
   gui.add(params, 'foldScale', 0.5, 3.0, 0.01).name('Fold Scale');
 
@@ -112,6 +115,7 @@ export const main = () => {
     shader.setUniform('iAmbient', params.ambient);
     shader.setUniform('iSpecular', params.specular);
     shader.setUniform('iExposure', params.exposure);
+    shader.setUniform('iSabsMode', Math.round(Number(params.sabsMode)));
     shader.draw();
 
     requestAnimationFrame(render);
