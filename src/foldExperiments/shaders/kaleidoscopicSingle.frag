@@ -46,34 +46,32 @@ vec3 foldVec(float t) {
   return n;
 }
 
+vec3 kaleidFold(vec3 p, int t) {
+  vec3 n = foldVec(float(t));
+  for (int i = 0; i < 8; i++) {
+    if (i >= t) break;
+    p.xy = sabs(p.xy);
+    float g = dot(p, n);
+    p -= (g - sabs(g)) * n;
+  }
+  return p;
+}
+
 float mapFold(vec3 p, out float orbit) {
   vec3 q = p;
   q.xy = rot(iInitRotXY) * q.xy;
   q.xz = rot(iInitRotXZ) * q.xz;
 
-  vec3 n = foldVec(float(iFoldCount));
-  float absOffset = iFoldScale * 0.08;
+  // q.xz = rot(q.y * iIterRotXY) * q.xz;
 
-  for (int i = 0; i < 8; i++) {
-    if (i >= iFoldCount) break;
+  q = kaleidFold(q, iFoldCount);
+  q.z -= iFoldScale * 0.67;
+  q.yz = rot(iIterRotXY) * q.yz;
+  q.xz = rot(iIterRotYZ) * q.xz;
 
-    q = abs(q) - absOffset;
-    if (q.x < q.y) q.xy = q.yx;
-    if (q.x < q.z) q.xz = q.zx;
-    if (q.y < q.z) q.yz = q.zy;
-    q.xy -= 0.05;
+  orbit += 0.5 + 0.5 * cos(length(q) * 3.0);
 
-    q.xy = sabs(q.xy);
-    float g = dot(q, n);
-    q -= (g - sabs(g)) * n;
-
-    q.xy = rot(iIterRotXY) * q.xy;
-    q.yz = rot(iIterRotYZ) * q.yz;
-
-    orbit += exp(-2.0 * length(q));
-  }
-
-  vec3 a = vec3(0.4, 0.4, 0.4);
+  vec3 a = vec3(0.1, 0.5, 0.1);
   return length(q - clamp(q, -a, a)) - 0.05;
 }
 
