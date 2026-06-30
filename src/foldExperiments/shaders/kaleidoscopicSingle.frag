@@ -19,11 +19,20 @@ uniform float iLightHeight;
 uniform float iAmbient;
 uniform float iSpecular;
 uniform float iExposure;
+uniform int iSabsMode;
 
 #define PI 3.141592653589793
 #define TAU 6.283185307179586
 #define FAR 28.0
-#define sabs(x) sqrt((x)*(x) + 5e-4)
+#define EPS 5e-4
+
+float sabs(float x) {
+  if (iSabsMode == 1) return max(abs(x), EPS);
+  if (iSabsMode == 2) return x * tanh(x / EPS);
+  if (iSabsMode == 3) return abs(x) + EPS * exp(-abs(x) / EPS);
+  return sqrt(x * x + EPS);
+}
+vec2 sabs(vec2 v) { return vec2(sabs(v.x), sabs(v.y)); }
 
 mat2 rot(float a) {
   float s = sin(a);
@@ -37,30 +46,34 @@ vec3 foldVec(float t) {
   return n;
 }
 
-vec3 kaleidFold(vec3 p, int t) {
-  vec3 n = foldVec(float(t));
-  for (int i = 0; i < 8; i++) {
-    if (i >= t) break;
-    p.xy = sabs(p.xy);
-    float g = dot(p, n);
-    p -= (g - sabs(g)) * n;
-  }
-  return p;
-}
-
 float mapFold(vec3 p, out float orbit) {
   vec3 q = p;
   q.xy = rot(iInitRotXY) * q.xy;
   q.xz = rot(iInitRotXZ) * q.xz;
 
-  q = kaleidFold(q, iFoldCount);
-  q.z -= iFoldScale * 0.67;
-  q.yz = rot(iIterRotXY) * q.yz;
-  q.xz = rot(iIterRotYZ) * q.xz;
+  vec3 n = foldVec(float(iFoldCount));
+  float absOffset = iFoldScale * 0.08;
 
-  orbit += 0.5 + 0.5 * cos(length(q) * 3.0);
+  for (int i = 0; i < 8; i++) {
+    if (i >= iFoldCount) break;
 
-  vec3 a = vec3(0.1, 0.5, 0.1);
+    q = abs(q) - absOffset;
+    if (q.x < q.y) q.xy = q.yx;
+    if (q.x < q.z) q.xz = q.zx;
+    if (q.y < q.z) q.yz = q.zy;
+    q.xy -= 0.05;
+
+    q.xy = sabs(q.xy);
+    float g = dot(q, n);
+    q -= (g - sabs(g)) * n;
+
+    q.xy = rot(iIterRotXY) * q.xy;
+    q.yz = rot(iIterRotYZ) * q.yz;
+
+    orbit += exp(-2.0 * length(q));
+  }
+
+  vec3 a = vec3(0.4, 0.4, 0.4);
   return length(q - clamp(q, -a, a)) - 0.05;
 }
 
@@ -104,12 +117,20 @@ float ambientOcclusion(vec3 p, vec3 n) {
   return clamp(1.0 - occ * 1.35, 0.0, 1.0);
 }
 
-vec3 palette(float t) {
-  vec3 a = vec3(0.72, 0.70, 0.68);
-  vec3 b = vec3(0.10, 0.09, 0.12);
-  vec3 c = vec3(1.0, 1.2, 0.8);
-  vec3 d = vec3(0.0, 0.20, 0.45);
+vec3 metalColor(float t) {
+  vec3 a = vec3(0.62, 0.60, 0.58);
+  vec3 b = vec3(0.18, 0.16, 0.20);
+  vec3 c = vec3(1.4, 1.0, 0.7);
+  vec3 d = vec3(0.0, 0.12, 0.35);
   return a + b * cos(TAU * (c * t + d));
+}
+
+vec3 envReflect(vec3 rd, vec3 n) {
+  vec3 ref = reflect(rd, n);
+  float sky = smoothstep(-0.1, 0.4, ref.y);
+  vec3 warm = vec3(0.12, 0.10, 0.08);
+  vec3 cool = vec3(0.08, 0.10, 0.14);
+  return mix(warm, cool, sky) * 0.5;
 }
 
 vec3 cameraRay(vec2 uv, vec3 ro, vec3 ta) {
@@ -162,13 +183,15 @@ void main() {
     float NoV = max(dot(n, -rd), 0.0);
     float spec = pow(max(dot(n, h), 0.0), 192.0) * iSpecular * shadow * 3.5;
 
-    float foldTone = hit.y * 0.08 + 0.15 + length(p) * 0.045;
-    vec3 base = palette(foldTone);
-    vec3 fresnel = base + (vec3(1.0) - base) * pow(1.0 - NoV, 5.0);
+    float foldTone = hit.y * 0.12 + length(p) * 0.06;
+    vec3 base = metalColor(foldTone);
+    vec3 F0 = base * 0.9 + 0.1;
+    vec3 fresnel = F0 + (vec3(1.0) - F0) * pow(1.0 - NoV, 5.0);
 
-    vec3 lit = base * (iAmbient * 0.4 + diff * shadow * 0.10) * ao;
+    vec3 env = envReflect(rd, n);
+    vec3 lit = fresnel * (env * ao + diff * shadow * 0.6);
     lit += fresnel * spec;
-    lit += fresnel * pow(1.0 - NoV, 4.0) * (0.30 + 0.20 * ao);
+    lit += base * iAmbient * 0.15 * ao;
 
     float fog = 1.0 - exp(-0.035 * hit.x * hit.x);
     color = mix(lit, color, fog);
