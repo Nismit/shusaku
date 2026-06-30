@@ -20,10 +20,10 @@ uniform float iAmbient;
 uniform float iSpecular;
 uniform float iExposure;
 
+#define PI 3.141592653589793
 #define TAU 6.283185307179586
 #define FAR 28.0
-
-const vec2 h60 = vec2(-0.5, 0.8660254037844386);
+#define sabs(x) sqrt((x)*(x) + 5e-4)
 
 mat2 rot(float a) {
   float s = sin(a);
@@ -31,9 +31,10 @@ mat2 rot(float a) {
   return mat2(c, -s, s, c);
 }
 
-float sdBox(vec3 p, vec3 b) {
-  vec3 q = abs(p) - b;
-  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+vec3 foldVec(float t) {
+  vec3 n = vec3(-0.5, -cos(PI / t), 0.0);
+  n.z = sqrt(1.0 - dot(n, n));
+  return n;
 }
 
 float mapFold(vec3 p, out float orbit) {
@@ -41,32 +42,28 @@ float mapFold(vec3 p, out float orbit) {
   q.xy = rot(iInitRotXY) * q.xy;
   q.xz = rot(iInitRotXZ) * q.xz;
 
-  float s = 1.0;
-  float sc = 1.0 + iFoldScale * 0.5;
-  vec3 offset = vec3(1.0, 0.55, 0.7) * (sc - 1.0);
+  vec3 n = foldVec(3.0);
+  float freq = 1.5 + iFoldScale;
+  float amp = 0.025 / freq;
 
   for (int i = 0; i < 8; i++) {
     if (i >= iFoldCount) break;
 
-    q.z = abs(q.z);
+    q.xy = sabs(q.xy);
+    float g = dot(q, n);
+    q -= (g - sabs(g)) * n;
 
-    float d1 = dot(q.xy, h60);
-    if (d1 < 0.0) q.xy -= 2.0 * d1 * h60;
-    float d2 = dot(q.xy, h60 * vec2(1.0, -1.0));
-    if (d2 < 0.0) q.xy -= 2.0 * d2 * (h60 * vec2(1.0, -1.0));
+    q += sin(q.yzx * freq) * amp;
 
-    q.x = abs(q.x);
-
-    q = q * sc - offset;
-    s *= sc;
+    q -= 0.1;
 
     q.xy = rot(iIterRotXY) * q.xy;
     q.yz = rot(iIterRotYZ) * q.yz;
 
-    orbit += exp(-2.0 * length(q / s));
+    orbit += 0.5 + 0.5 * cos(length(q) * 3.5);
   }
 
-  return (sdBox(q, vec3(0.4, 1.0, 0.4)) - 0.05) / s;
+  return length(vec2(length(q.xy) - 0.28, q.z)) - 0.06;
 }
 
 vec2 mapScene(vec3 p) {
@@ -167,7 +164,7 @@ void main() {
     float spec = pow(max(dot(n, h), 0.0), 44.0) * iSpecular * shadow;
     float rim = pow(1.0 - max(dot(n, -rd), 0.0), 3.4);
 
-    float foldTone = hit.y * 0.08 + 0.25 + length(p) * 0.045;
+    float foldTone = hit.y * 0.08 + 0.15 + length(p) * 0.045;
     vec3 base = palette(foldTone);
 
     vec3 lit = base * (iAmbient + diff * shadow * 1.25) * ao;

@@ -23,8 +23,6 @@ uniform float iExposure;
 #define TAU 6.283185307179586
 #define FAR 28.0
 
-const vec2 h60 = vec2(-0.5, 0.8660254037844386);
-
 mat2 rot(float a) {
   float s = sin(a);
   float c = cos(a);
@@ -32,8 +30,8 @@ mat2 rot(float a) {
 }
 
 float sdBox(vec3 p, vec3 b) {
-  vec3 q = abs(p) - b;
-  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+  vec3 d = abs(p) - b;
+  return length(max(d, 0.0)) + min(max(d.x, max(d.y, d.z)), 0.0);
 }
 
 float mapFold(vec3 p, out float orbit) {
@@ -41,38 +39,32 @@ float mapFold(vec3 p, out float orbit) {
   q.xy = rot(iInitRotXY) * q.xy;
   q.xz = rot(iInitRotXZ) * q.xz;
 
-  float s = 1.0;
-  float sc = 1.0 + iFoldScale * 0.5;
-  vec3 offset = vec3(1.0, 0.55, 0.7) * (sc - 1.0);
+  float absOff = 0.2;
+  float freq = 1.0 + iFoldScale * 1.5;
+  float amp = 0.12 / freq;
 
   for (int i = 0; i < 8; i++) {
     if (i >= iFoldCount) break;
 
-    q.z = abs(q.z);
+    q = abs(q) - absOff;
 
-    float d1 = dot(q.xy, h60);
-    if (d1 < 0.0) q.xy -= 2.0 * d1 * h60;
-    float d2 = dot(q.xy, h60 * vec2(1.0, -1.0));
-    if (d2 < 0.0) q.xy -= 2.0 * d2 * (h60 * vec2(1.0, -1.0));
+    q += sin(q.yzx * freq) * amp;
 
-    q.x = abs(q.x);
-
-    q = q * sc - offset;
-    s *= sc;
+    q.xy -= 0.05;
 
     q.xy = rot(iIterRotXY) * q.xy;
     q.yz = rot(iIterRotYZ) * q.yz;
 
-    orbit += exp(-2.0 * length(q / s));
+    orbit += exp(-2.0 * length(q));
   }
 
-  return (sdBox(q, vec3(0.4, 1.0, 0.4)) - 0.05) / s;
+  return sdBox(q, vec3(0.5, 0.5, 0.4)) - 0.05;
 }
 
 vec2 mapScene(vec3 p) {
   float orbit = 0.0;
   float d = mapFold(p, orbit);
-  d = max(d, length(p) - 2.35);
+  // d = max(d, length(p) - 2.35);
   return vec2(d, orbit);
 }
 
@@ -167,7 +159,7 @@ void main() {
     float spec = pow(max(dot(n, h), 0.0), 44.0) * iSpecular * shadow;
     float rim = pow(1.0 - max(dot(n, -rd), 0.0), 3.4);
 
-    float foldTone = hit.y * 0.08 + 0.25 + length(p) * 0.045;
+    float foldTone = hit.y * 0.08 + 0.55 + length(p) * 0.045;
     vec3 base = palette(foldTone);
 
     vec3 lit = base * (iAmbient + diff * shadow * 1.25) * ao;
