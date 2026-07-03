@@ -73,6 +73,7 @@ export const main = () => {
     ampA: 2.4,
     ampB: 1.7,
     tunnelRadius: 1.0,
+    twist: 0.15,
     style: 0,
   };
 
@@ -92,6 +93,7 @@ export const main = () => {
   pathFolder.add(params, 'ampA', 0.5, 5.0, 0.1).name('Amp A');
   pathFolder.add(params, 'ampB', 0.5, 5.0, 0.1).name('Amp B');
   pathFolder.add(params, 'tunnelRadius', 0.5, 2.0, 0.1).name('Radius');
+  pathFolder.add(params, 'twist', -0.5, 0.5, 0.01).name('Twist');
   pathFolder.close();
 
   gui.close();
@@ -161,6 +163,7 @@ export const main = () => {
       iAmpA: params.ampA,
       iAmpB: params.ampB,
       iTunnelRadius: params.tunnelRadius,
+      iTwist: params.twist,
       iStyle: params.style,
     });
   }
@@ -205,6 +208,7 @@ export const main = () => {
     shader.setUniform('iAmpA', params.ampA);
     shader.setUniform('iAmpB', params.ampB);
     shader.setUniform('iTunnelRadius', params.tunnelRadius);
+    shader.setUniform('iTwist', params.twist);
     shader.setUniform('iStyle', params.style);
     shader.draw();
 

@@ -15,18 +15,24 @@ uniform float iFreqB;
 uniform float iAmpA;
 uniform float iAmpB;
 uniform float iTunnelRadius;
+uniform float iTwist;
 uniform int iStyle;
 
 #define PI 3.1415926535898
 #define TAU 6.28318530718
-#define NUM_ORBS 1
 #define NUM_CABLES 4
 #define RING_SPACING 2.5
 #define CONNECTOR_SPACING 8.0
+#define FRAME_SPACING 6.0
 
 // Tunnel path function
 vec2 path(float z) {
   return vec2(iAmpA * sin(z * iFreqA), iAmpB * cos(z * iFreqB));
+}
+
+// Twist angle accumulated along the tunnel axis
+float twistAngle(float z) {
+  return z * iTwist;
 }
 
 // Hash function
@@ -50,35 +56,6 @@ float noise1D(float p) {
   return mix(hash(i), hash(i + 1.0), f);
 }
 
-// Get orb position - floats within tunnel, never touches walls
-vec3 getOrbPosition(int orbIndex, float time) {
-  float idx = float(orbIndex);
-  float baseZ = time * 4.0 + 4.5;
-
-  // Floaty wandering motion with more speed
-  float wanderSpeed = 0.5 + hash(idx * 7.0) * 0.3;
-  float phaseX = hash(idx * 13.0) * TAU;
-  float phaseY = hash(idx * 17.0) * TAU;
-  float phaseZ = hash(idx * 19.0) * TAU;
-
-  // Keep orbs well within tunnel (max 70% of radius from center)
-  float maxRadius = iTunnelRadius * 0.7;
-  float orbRadius = maxRadius * (0.5 + 0.5 * hash(idx * 23.0));
-  float angleOffset = time * wanderSpeed + hash(idx * 31.0) * TAU;
-
-  // Layered sine waves for organic floating motion - more amplitude
-  vec2 localOffset = vec2(
-    sin(angleOffset + phaseX) * orbRadius + sin(angleOffset * 0.8 + phaseX * 1.3) * orbRadius * 0.5 + sin(angleOffset * 0.4 + phaseX * 2.1) * orbRadius * 0.3,
-    cos(angleOffset * 0.7 + phaseY) * orbRadius + cos(angleOffset * 0.5 + phaseY * 1.5) * orbRadius * 0.5 + cos(angleOffset * 0.3 + phaseY * 2.3) * orbRadius * 0.3
-  );
-
-  // Add z-axis bobbing for depth variation
-  float zBob = sin(time * 0.6 + phaseZ) * 1.2;
-
-  vec2 pathPos = path(baseZ + zBob);
-  return vec3(pathPos + localOffset, baseZ + zBob);
-}
-
 // Get cable position at given z and cable index
 vec3 getCablePosition(int cableIndex, float z) {
   float idx = float(cableIndex);
@@ -86,6 +63,7 @@ vec3 getCablePosition(int cableIndex, float z) {
   // Base angle with irregular spacing
   float baseAngle = idx * TAU / float(NUM_CABLES);
   baseAngle += (hash(idx * 41.0) - 0.5) * 0.8; // Irregular spacing
+  baseAngle += twistAngle(z); // Spiral around the tunnel axis
 
   // Add undulation using noise
   float undulateFreq = 0.3 + hash(idx * 47.0) * 0.2;
@@ -149,6 +127,23 @@ float mapTunnel(vec3 p) {
   return iTunnelRadius - length(tun);
 }
 
+// Distance to structural support ring (girder) - factory-style tunnel segment
+float frameDist(vec3 p) {
+  float ringZ = floor(p.z / FRAME_SPACING + 0.5) * FRAME_SPACING;
+  float zDist = abs(p.z - ringZ);
+  if (zDist > 0.2) return 1e10;
+
+  vec2 tun = p.xy - path(ringZ);
+  float r = length(tun);
+
+  float frameDepth = 0.12; // how far it protrudes inward from the wall
+  float frameWidth = 0.07; // thickness along z
+  vec2 q = vec2(r - (iTunnelRadius - frameDepth * 0.5), p.z - ringZ);
+  vec2 halfSize = vec2(frameDepth * 0.5, frameWidth * 0.5);
+  vec2 d = abs(q) - halfSize;
+  return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
+
 // Combined cable geometry distance - single loop for all cable elements
 vec4 mapAllCables(vec3 p) {
   float dCable = 1e10;
@@ -169,14 +164,17 @@ vec4 mapAllCables(vec3 p) {
 float map(vec3 p) {
   float tunnel = mapTunnel(p);
   vec4 cables = mapAllCables(p);
-  return min(tunnel, cables.x);
+  float frame = frameDist(p);
+  return min(min(tunnel, cables.x), frame);
 }
 
-// Returns: 0 = nothing, 1 = cable, 2 = ring, 3 = connector
+// Returns: 0 = nothing, 1 = cable, 2 = ring, 3 = connector, 4 = structural frame
 int getCableHitType(vec3 p) {
   vec4 cables = mapAllCables(p);
+  float frame = frameDist(p);
   float threshold = 0.015;
 
+  if (frame < threshold) return 4;     // structural support frame
   if (cables.w < threshold) return 3;  // connector
   if (cables.z < threshold) return 2;  // ring
   if (cables.y < threshold) return 1;  // cable
@@ -193,33 +191,6 @@ vec3 getNormal(vec3 p) {
     k.yxy * map(p + k.yxy * eps) +
     k.xxx * map(p + k.xxx * eps)
   );
-}
-
-// Calculate GI-like lighting from orbs
-vec3 calcOrbLighting(vec3 surfacePos, vec3 surfaceNormal, float time) {
-  vec3 totalLight = vec3(0.0);
-
-  for (int i = 0; i < NUM_ORBS; i++) {
-    vec3 orbPos = getOrbPosition(i, time);
-    vec3 toOrb = orbPos - surfacePos;
-    float dist = length(toOrb);
-    vec3 lightDir = toOrb / dist;
-
-    // Diffuse lighting with wrap for softer falloff
-    float NdotL = max(dot(surfaceNormal, lightDir), 0.0);
-    float wrap = 0.3;
-    float wrapDiffuse = max((NdotL + wrap) / (1.0 + wrap), 0.0);
-
-    // Softer attenuation for wider GI spread
-    float atten = 1.0 / (1.0 + dist * 0.3 + dist * dist * 0.05);
-
-    // White orb color
-    vec3 orbColor = vec3(1.0);
-
-    totalLight += orbColor * wrapDiffuse * atten * 0.5;
-  }
-
-  return totalLight;
 }
 
 // Calculate energy pulse on cables (direct glow)
@@ -293,7 +264,7 @@ vec3 calcCableGI(vec3 surfacePos, vec3 surfaceNormal, float time) {
   return totalLight;
 }
 
-// Check if we hit any cable geometry
+// Check if we hit any cable or structural geometry
 bool isCableHit(vec3 p) {
   return getCableHitType(p) > 0;
 }
@@ -311,9 +282,9 @@ float noise(vec2 p) {
 }
 
 // Style 0: Wireframe Grid
-vec3 styleWireframe(vec3 sp, vec3 sn, vec3 rd, float t, vec3 orbLight, vec3 cableGlow, vec3 cableGI) {
+vec3 styleWireframe(vec3 sp, vec3 sn, vec3 rd, float t, vec3 cableGlow, vec3 cableGI) {
   vec2 localPos = sp.xy - path(sp.z);
-  float angle = atan(localPos.y, localPos.x);
+  float angle = atan(localPos.y, localPos.x) - twistAngle(sp.z);
 
   // Ring lines along Z
   float ringLine = abs(fract(sp.z * 0.5) - 0.5);
@@ -341,8 +312,6 @@ vec3 styleWireframe(vec3 sp, vec3 sn, vec3 rd, float t, vec3 orbLight, vec3 cabl
   float lineIntensity = (1.0 - lines) * (0.5 + 0.2 * diff + 0.2 * rim);
   vec3 col = baseColor + lineColor * lineIntensity;
 
-  // Add orb GI lighting
-  col += orbLight * 0.4;
   // Add cable glow and GI
   col += cableGlow;
   col += cableGI * 0.15;
@@ -351,9 +320,9 @@ vec3 styleWireframe(vec3 sp, vec3 sn, vec3 rd, float t, vec3 orbLight, vec3 cabl
 }
 
 // Style 1: Neon Glow
-vec3 styleNeon(vec3 sp, vec3 sn, vec3 rd, float t, vec3 orbLight, vec3 cableGlow, vec3 cableGI) {
+vec3 styleNeon(vec3 sp, vec3 sn, vec3 rd, float t, vec3 cableGlow, vec3 cableGI) {
   vec2 localPos = sp.xy - path(sp.z);
-  float angle = atan(localPos.y, localPos.x);
+  float angle = atan(localPos.y, localPos.x) - twistAngle(sp.z);
 
   // Pulsing rings
   float ringPhase = sp.z * 0.3 - iTime * 2.0;
@@ -384,8 +353,6 @@ vec3 styleNeon(vec3 sp, vec3 sn, vec3 rd, float t, vec3 orbLight, vec3 cableGlow
   vec3 col = glowColor * (ring * 0.5 + sectorGlow * 0.3 + rim * 0.2);
   col += vec3(0.01, 0.005, 0.015);  // Darker ambient
 
-  // Add orb GI lighting
-  col += orbLight * 0.3;
   // Add cable glow and GI
   col += cableGlow;
   col += cableGI * 0.1;
@@ -394,9 +361,9 @@ vec3 styleNeon(vec3 sp, vec3 sn, vec3 rd, float t, vec3 orbLight, vec3 cableGlow
 }
 
 // Style 2: Truchet Pattern (Black & White)
-vec3 styleTruchet(vec3 sp, vec3 sn, vec3 rd, float t, vec3 orbLight, vec3 cableGlow, vec3 cableGI) {
+vec3 styleTruchet(vec3 sp, vec3 sn, vec3 rd, float t, vec3 cableGlow, vec3 cableGI) {
   vec2 localPos = sp.xy - path(sp.z);
-  float angle = atan(localPos.y, localPos.x);
+  float angle = atan(localPos.y, localPos.x) - twistAngle(sp.z);
 
   // UV for truchet grid
   vec2 uv = vec2(angle / TAU * 10.0, sp.z * 0.8);
@@ -431,8 +398,6 @@ vec3 styleTruchet(vec3 sp, vec3 sn, vec3 rd, float t, vec3 orbLight, vec3 cableG
   float diff = max(dot(sn, -rd), 0.0) * 0.3 + 0.5;
   col *= diff;
 
-  // Add orb GI lighting
-  col += orbLight * 0.5;
   // Add cable glow and GI
   col += cableGlow;
   col += cableGI * 0.2;
@@ -441,9 +406,9 @@ vec3 styleTruchet(vec3 sp, vec3 sn, vec3 rd, float t, vec3 orbLight, vec3 cableG
 }
 
 // Style 3: Hex Tiling
-vec3 styleHexTiling(vec3 sp, vec3 sn, vec3 rd, float t, vec3 orbLight, vec3 cableGlow, vec3 cableGI) {
+vec3 styleHexTiling(vec3 sp, vec3 sn, vec3 rd, float t, vec3 cableGlow, vec3 cableGI) {
   vec2 localPos = sp.xy - path(sp.z);
-  float angle = atan(localPos.y, localPos.x);
+  float angle = atan(localPos.y, localPos.x) - twistAngle(sp.z);
 
   // UV for hex grid
   vec2 uv = vec2(angle / TAU * 8.0, sp.z * 0.6);
@@ -502,8 +467,6 @@ vec3 styleHexTiling(vec3 sp, vec3 sn, vec3 rd, float t, vec3 orbLight, vec3 cabl
   float edgeLine = smoothstep(0.46, 0.48, hexDist) * smoothstep(0.5, 0.48, hexDist);
   col += vec3(0.2, 0.3, 0.4) * edgeLine * 0.3;
 
-  // Add orb GI lighting
-  col += orbLight * 0.35;
   // Add cable glow and GI
   col += cableGlow;
   col += cableGI * 0.12;
@@ -512,9 +475,9 @@ vec3 styleHexTiling(vec3 sp, vec3 sn, vec3 rd, float t, vec3 orbLight, vec3 cabl
 }
 
 // Style 4: Warp Speed
-vec3 styleWarp(vec3 sp, vec3 sn, vec3 rd, float t, vec3 orbLight, vec3 cableGlow, vec3 cableGI) {
+vec3 styleWarp(vec3 sp, vec3 sn, vec3 rd, float t, vec3 cableGlow, vec3 cableGI) {
   vec2 localPos = sp.xy - path(sp.z);
-  float angle = atan(localPos.y, localPos.x);
+  float angle = atan(localPos.y, localPos.x) - twistAngle(sp.z);
 
   // Speed streaks
   float streakAngle = floor(angle * 30.0 / TAU);
@@ -545,56 +508,11 @@ vec3 styleWarp(vec3 sp, vec3 sn, vec3 rd, float t, vec3 orbLight, vec3 cableGlow
   // Dimmer stars
   col += vec3(0.5, 0.55, 0.6) * star * twinkle;
 
-  // Add orb GI lighting
-  col += orbLight * 0.3;
   // Add cable glow and GI
   col += cableGlow;
   col += cableGI * 0.1;
 
   return col * fog;
-}
-
-// Render glowing orbs - subtle core, emphasis on GI
-vec3 renderOrbs(vec3 ro, vec3 rd, float maxT, float time) {
-  vec3 orbGlow = vec3(0.0);
-
-  for (int i = 0; i < NUM_ORBS; i++) {
-    vec3 orbPos = getOrbPosition(i, time);
-
-    // Ray-sphere intersection for core
-    vec3 oc = ro - orbPos;
-    float b = dot(oc, rd);
-    float c = dot(oc, oc) - 0.03 * 0.03; // Smaller core
-    float h = b * b - c;
-
-    if (h > 0.0) {
-      float tOrb = -b - sqrt(h);
-      if (tOrb > 0.0 && tOrb < maxT) {
-        // White orb color
-        vec3 orbColor = vec3(1.0);
-
-        // Depth attenuation
-        float atten = exp(-tOrb * 0.03);
-        orbGlow += orbColor * 0.8 * atten;
-      }
-    }
-
-    // Subtle soft glow halo
-    float distToRay = length(cross(rd, orbPos - ro));
-    float glowRadius = 0.08;
-    float glow = exp(-distToRay * distToRay / (glowRadius * glowRadius));
-
-    // Only show glow if orb is in front
-    float tClosest = -dot(oc, rd);
-    if (tClosest > 0.0 && tClosest < maxT) {
-      // White orb color
-      vec3 orbColor = vec3(1.0);
-      float atten = exp(-tClosest * 0.02);
-      orbGlow += orbColor * glow * 0.15 * atten;
-    }
-  }
-
-  return orbGlow;
 }
 
 void main() {
@@ -636,14 +554,13 @@ void main() {
     vec3 sp = camPos + rd * t;
     vec3 sn = getNormal(sp);
 
-    // Check if we hit a cable
+    // Check if we hit a cable or structural element
     bool hitCable = isCableHit(sp);
 
     if (hitCable) {
-      // Render cable geometry
+      // Render cable/structural geometry
       vec3 cableGlow = calcCableGlow(sp, time);
       vec3 cableGI = calcCableGI(sp, sn, time);
-      vec3 orbLight = calcOrbLighting(sp, sn, time);
 
       int hitType = getCableHitType(sp);
 
@@ -654,7 +571,21 @@ void main() {
       float diff = max(dot(sn, -rd), 0.0) * 0.3 + 0.3;
       float rim = pow(1.0 - abs(dot(sn, rd)), 3.0);
 
-      if (hitType == 3) {
+      if (hitType == 4) {
+        // Structural support frame - worn metal girder with hazard stripes
+        vec2 localPos = sp.xy - path(sp.z);
+        float angle = atan(localPos.y, localPos.x) - twistAngle(sp.z);
+
+        float stripeFreq = 24.0;
+        float stripe = mod(floor(angle * stripeFreq / TAU), 2.0);
+        vec3 hazardYellow = vec3(0.55, 0.42, 0.05);
+        vec3 hazardBlack = vec3(0.015, 0.015, 0.015);
+        vec3 frameBase = mix(hazardBlack, hazardYellow, stripe);
+
+        float spec = pow(max(dot(reflect(rd, sn), -rd), 0.0), 20.0);
+        col = frameBase * (diff + rim * 0.2) + vec3(0.4) * spec * 0.2;
+        col += cableGlow * 0.3 + cableGI * 0.06;
+      } else if (hitType == 3) {
         // Connector - dark metallic box with indicator light
         vec3 connBase = vec3(0.02, 0.02, 0.025);
         vec3 connHighlight = vec3(0.05, 0.05, 0.06);
@@ -665,7 +596,7 @@ void main() {
 
         col = mix(connBase, connHighlight, diff + rim * 0.3);
         col += indicatorColor * pulse * 0.3;
-        col += cableGlow * 0.5 + orbLight * 0.15 + cableGI * 0.05;
+        col += cableGlow * 0.5 + cableGI * 0.05;
       } else if (hitType == 2) {
         // Ring - shiny metallic
         vec3 ringBase = vec3(0.12, 0.14, 0.18);
@@ -673,33 +604,30 @@ void main() {
 
         float spec = pow(max(dot(reflect(rd, sn), -rd), 0.0), 32.0);
         col = mix(ringBase, ringHighlight, diff) + vec3(0.5) * spec * 0.3;
-        col += cableGlow * 1.2 + orbLight * 0.2 + cableGI * 0.08;
+        col += cableGlow * 1.2 + cableGI * 0.08;
       } else {
         // Cable - base with energy glow
         vec3 cableBase = vec3(0.04, 0.05, 0.06);
-        col = cableBase * diff + cableGlow * 2.0 + orbLight * 0.3 + cableGI * 0.1;
+        col = cableBase * diff + cableGlow * 2.0 + cableGI * 0.1;
       }
 
       col *= fog;
     } else {
-      // Calculate orb GI lighting
-      vec3 orbLight = calcOrbLighting(sp, sn, time);
-
       // Calculate cable glow and GI contribution
       vec3 cableGlow = calcCableGlow(sp, time);
       vec3 cableGI = calcCableGI(sp, sn, time);
 
       // Apply style with lighting
       if (iStyle == 0) {
-        col = styleWireframe(sp, sn, rd, t, orbLight, cableGlow, cableGI);
+        col = styleWireframe(sp, sn, rd, t, cableGlow, cableGI);
       } else if (iStyle == 1) {
-        col = styleNeon(sp, sn, rd, t, orbLight, cableGlow, cableGI);
+        col = styleNeon(sp, sn, rd, t, cableGlow, cableGI);
       } else if (iStyle == 2) {
-        col = styleTruchet(sp, sn, rd, t, orbLight, cableGlow, cableGI);
+        col = styleTruchet(sp, sn, rd, t, cableGlow, cableGI);
       } else if (iStyle == 3) {
-        col = styleHexTiling(sp, sn, rd, t, orbLight, cableGlow, cableGI);
+        col = styleHexTiling(sp, sn, rd, t, cableGlow, cableGI);
       } else {
-        col = styleWarp(sp, sn, rd, t, orbLight, cableGlow, cableGI);
+        col = styleWarp(sp, sn, rd, t, cableGlow, cableGI);
       }
     }
   } else {
@@ -718,10 +646,6 @@ void main() {
       col = vec3(0.0, 0.005, 0.01) * fadeFog;
     }
   }
-
-  // Add orb glow (rendered on top)
-  vec3 orbGlow = renderOrbs(camPos, rd, t, time);
-  col += orbGlow;
 
   fragColor = vec4(col, 1.0);
 }
