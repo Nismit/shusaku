@@ -24,7 +24,12 @@ uniform float iTwist;
 #define CONNECTOR_SPACING 8.0
 #define NUM_PIPES 3
 #define PIPE_FLANGE_SPACING 3.0
+#define PIPE_CELL 7.0
+#define PIPE_RUN 4.5
+#define PIPE_JOG_TRANSITION 0.35
 #define PANEL_SPACING 9.0
+#define CABLE_DODGE_ANGLE 0.35
+#define CABLE_DODGE_AMOUNT 0.16
 
 // Tunnel path function
 vec2 path(float z) {
@@ -57,6 +62,15 @@ float noise1D(float p) {
   return mix(hash(i), hash(i + 1.0), f);
 }
 
+// Forward declaration - pipe angle at a given z (defined further down)
+float getPipeAngle(int pipeIndex, float z);
+
+// Shortest signed difference between two angles, wrapped to [-PI, PI]
+float angleDiff(float a, float b) {
+  float d = mod(a - b + PI, TAU) - PI;
+  return d;
+}
+
 // Get cable position at given z and cable index
 vec3 getCablePosition(int cableIndex, float z) {
   float idx = float(cableIndex);
@@ -74,6 +88,13 @@ vec3 getCablePosition(int cableIndex, float z) {
 
   float angle = baseAngle + angleNoise;
   float radius = (iTunnelRadius - 0.08) * (1.0 + radiusNoise); // Slightly inside tunnel wall
+
+  // Dodge any pipe that crosses close by, lifting the cable inward off the wall
+  for (int j = 0; j < NUM_PIPES; j++) {
+    float pipeAngle = getPipeAngle(j, z);
+    float proximity = smoothstep(CABLE_DODGE_ANGLE, 0.0, abs(angleDiff(angle, pipeAngle)));
+    radius -= proximity * CABLE_DODGE_AMOUNT;
+  }
 
   vec2 pathPos = path(z);
   vec2 localPos = vec2(cos(angle), sin(angle)) * radius;
@@ -128,21 +149,45 @@ float mapTunnel(vec3 p) {
   return iTunnelRadius - length(tun);
 }
 
-// Get pipe position at given z and pipe index - runs straighter and closer to
-// the wall than the data cables, with only gentle undulation
-vec3 getPipePosition(int pipeIndex, float z) {
+// Angle of a pipe's route at the z-th cell boundary - each boundary gets an
+// independent kink so the pipe runs straight along z, then jogs sideways
+// (like a conduit elbow/bracket) before running straight again
+float pipeBoundaryAngle(int pipeIndex, float boundaryIdx) {
   float idx = float(pipeIndex);
 
   float baseAngle = idx * TAU / float(NUM_PIPES) + TAU / (float(NUM_PIPES) * 2.0);
   baseAngle += (hash(idx * 137.0) - 0.5) * 0.4;
-  baseAngle += twistAngle(z); // Spiral around the tunnel axis
+  baseAngle += twistAngle(boundaryIdx * PIPE_CELL); // Follow the tunnel's overall twist
+
+  float jog = (hash2(vec2(boundaryIdx, idx * 977.0)) - 0.5) * (PI * 0.6);
+  return baseAngle + jog;
+}
+
+// Pipe angle at given z - constant through the straight run, then eased into
+// the next boundary's angle across a short jog/elbow transition
+float getPipeAngle(int pipeIndex, float z) {
+  float cellIdx = floor(z / PIPE_CELL);
+  float jogPhase = z - cellIdx * PIPE_CELL;
+
+  float angleA = pipeBoundaryAngle(pipeIndex, cellIdx);
+  float angleB = pipeBoundaryAngle(pipeIndex, cellIdx + 1.0);
+
+  float tSmooth = smoothstep(PIPE_RUN - PIPE_JOG_TRANSITION, PIPE_RUN + PIPE_JOG_TRANSITION, jogPhase);
+  return mix(angleA, angleB, tSmooth);
+}
+
+// Get pipe position at given z and pipe index - runs straighter and closer to
+// the wall than the data cables, with only gentle undulation
+vec3 getPipePosition(int pipeIndex, float z) {
+  float idx = float(pipeIndex);
+  float angle = getPipeAngle(pipeIndex, z);
 
   float undulateFreq = 0.15 + hash(idx * 143.0) * 0.05;
   float radiusNoise = (noise1D(z * undulateFreq + idx * 300.0) - 0.5) * 0.04;
 
   float radius = (iTunnelRadius - 0.05) * (1.0 + radiusNoise);
   vec2 pathPos = path(z);
-  vec2 localPos = vec2(cos(baseAngle), sin(baseAngle)) * radius;
+  vec2 localPos = vec2(cos(angle), sin(angle)) * radius;
 
   return vec3(pathPos + localPos, z);
 }
