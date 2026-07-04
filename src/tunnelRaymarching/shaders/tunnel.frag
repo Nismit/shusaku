@@ -22,7 +22,9 @@ uniform float iTwist;
 #define NUM_CABLES 4
 #define RING_SPACING 2.5
 #define CONNECTOR_SPACING 8.0
-#define FRAME_SPACING 6.0
+#define NUM_PIPES 3
+#define PIPE_FLANGE_SPACING 3.0
+#define PANEL_SPACING 9.0
 
 // Tunnel path function
 vec2 path(float z) {
@@ -126,21 +128,93 @@ float mapTunnel(vec3 p) {
   return iTunnelRadius - length(tun);
 }
 
-// Distance to structural support ring (girder) - factory-style tunnel segment
-float frameDist(vec3 p) {
-  float ringZ = floor(p.z / FRAME_SPACING + 0.5) * FRAME_SPACING;
-  float zDist = abs(p.z - ringZ);
-  if (zDist > 0.2) return 1e10;
+// Get pipe position at given z and pipe index - runs straighter and closer to
+// the wall than the data cables, with only gentle undulation
+vec3 getPipePosition(int pipeIndex, float z) {
+  float idx = float(pipeIndex);
 
-  vec2 tun = p.xy - path(ringZ);
-  float r = length(tun);
+  float baseAngle = idx * TAU / float(NUM_PIPES) + TAU / (float(NUM_PIPES) * 2.0);
+  baseAngle += (hash(idx * 137.0) - 0.5) * 0.4;
+  baseAngle += twistAngle(z); // Spiral around the tunnel axis
 
-  float frameDepth = 0.12; // how far it protrudes inward from the wall
-  float frameWidth = 0.07; // thickness along z
-  vec2 q = vec2(r - (iTunnelRadius - frameDepth * 0.5), p.z - ringZ);
-  vec2 halfSize = vec2(frameDepth * 0.5, frameWidth * 0.5);
-  vec2 d = abs(q) - halfSize;
-  return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+  float undulateFreq = 0.15 + hash(idx * 143.0) * 0.05;
+  float radiusNoise = (noise1D(z * undulateFreq + idx * 300.0) - 0.5) * 0.04;
+
+  float radius = (iTunnelRadius - 0.05) * (1.0 + radiusNoise);
+  vec2 pathPos = path(z);
+  vec2 localPos = vec2(cos(baseAngle), sin(baseAngle)) * radius;
+
+  return vec3(pathPos + localPos, z);
+}
+
+// Distance to pipe at point p
+float pipeDist(vec3 p, int pipeIndex) {
+  vec3 pipePos = getPipePosition(pipeIndex, p.z);
+  return length(p.xy - pipePos.xy) - 0.014; // Thin pipe radius
+}
+
+// Distance to pipe flange (joint collar) with early z-bound check
+float pipeFlangeDist(vec3 p, int pipeIndex, float idx) {
+  float phase = hash(idx * 151.0) * PIPE_FLANGE_SPACING;
+  float flangeZ = floor((p.z + phase) / PIPE_FLANGE_SPACING) * PIPE_FLANGE_SPACING - phase;
+
+  float zDist = abs(p.z - flangeZ);
+  if (zDist > 0.05) return 1e10;
+
+  vec3 pipePos = getPipePosition(pipeIndex, flangeZ);
+  vec3 local = p - vec3(pipePos.xy, flangeZ);
+
+  float r = length(local.xy) - 0.022;
+  return max(r, abs(local.z) - 0.018);
+}
+
+// Combined pipe geometry distance
+vec3 mapAllPipes(vec3 p) {
+  float dPipe = 1e10;
+  float dFlange = 1e10;
+
+  for (int i = 0; i < NUM_PIPES; i++) {
+    float idx = float(i);
+    dPipe = min(dPipe, pipeDist(p, i));
+    dFlange = min(dFlange, pipeFlangeDist(p, i, idx));
+  }
+
+  return vec3(min(dPipe, dFlange), dPipe, dFlange);
+}
+
+// Distance and local frame info for a switchgear/distribution panel box
+// mounted flush against the tunnel wall
+vec4 panelInfo(vec3 p) {
+  float panelZ = floor(p.z / PANEL_SPACING + 0.5) * PANEL_SPACING;
+  float panelIdx = floor(p.z / PANEL_SPACING + 0.5);
+
+  float zDist = abs(p.z - panelZ);
+  if (zDist > 0.4) return vec4(1e10, 0.0, 0.0, panelIdx);
+
+  float panelAngle = hash(panelIdx * 97.0) * TAU + twistAngle(panelZ);
+  vec2 pathPos = path(panelZ);
+  vec2 dir = vec2(cos(panelAngle), sin(panelAngle));
+  vec2 tangent = vec2(-dir.y, dir.x);
+
+  vec2 localXY = p.xy - pathPos;
+  float radial = dot(localXY, dir);
+  float tangential = dot(localXY, tangent);
+  float zLocal = p.z - panelZ;
+
+  float panelDepth = 0.14;
+  float panelWidth = 0.34;
+  float panelHeight = 0.44;
+
+  vec3 q = vec3(radial - (iTunnelRadius - panelDepth * 0.5), tangential, zLocal);
+  vec3 halfSize = vec3(panelDepth * 0.5, panelWidth * 0.5, panelHeight * 0.5);
+  vec3 d = abs(q) - halfSize;
+  float dist = length(max(d, 0.0)) + min(max(d.x, max(d.y, d.z)), 0.0);
+
+  return vec4(dist, tangential, zLocal, panelIdx);
+}
+
+float panelDist(vec3 p) {
+  return panelInfo(p).x;
 }
 
 // Combined cable geometry distance - single loop for all cable elements
@@ -163,17 +237,21 @@ vec4 mapAllCables(vec3 p) {
 float map(vec3 p) {
   float tunnel = mapTunnel(p);
   vec4 cables = mapAllCables(p);
-  float frame = frameDist(p);
-  return min(min(tunnel, cables.x), frame);
+  vec3 pipes = mapAllPipes(p);
+  float panel = panelDist(p);
+  return min(min(min(tunnel, cables.x), pipes.x), panel);
 }
 
-// Returns: 0 = nothing, 1 = cable, 2 = ring, 3 = connector, 4 = structural frame
+// Returns: 0 = nothing, 1 = cable, 2 = ring, 3 = connector, 4 = pipe, 5 = pipe flange, 6 = panel
 int getCableHitType(vec3 p) {
   vec4 cables = mapAllCables(p);
-  float frame = frameDist(p);
+  vec3 pipes = mapAllPipes(p);
+  float panel = panelDist(p);
   float threshold = 0.015;
 
-  if (frame < threshold) return 4;     // structural support frame
+  if (panel < threshold) return 6;     // switchgear/distribution panel
+  if (pipes.z < threshold) return 5;   // pipe flange
+  if (pipes.y < threshold) return 4;   // pipe
   if (cables.w < threshold) return 3;  // connector
   if (cables.z < threshold) return 2;  // ring
   if (cables.y < threshold) return 1;  // cable
@@ -374,20 +452,51 @@ void main() {
       float diff = max(dot(sn, -rd), 0.0) * 0.3 + 0.3;
       float rim = pow(1.0 - abs(dot(sn, rd)), 3.0);
 
-      if (hitType == 4) {
-        // Structural support frame - worn metal girder with hazard stripes
-        vec2 localPos = sp.xy - path(sp.z);
-        float angle = atan(localPos.y, localPos.x) - twistAngle(sp.z);
+      if (hitType == 6) {
+        // Switchgear/distribution panel - flat metal cabinet mounted on the wall
+        vec4 info = panelInfo(sp);
+        float tangential = info.y;
+        float zLocal = info.z;
+        float panelIdx = info.w;
 
-        float stripeFreq = 24.0;
-        float stripe = mod(floor(angle * stripeFreq / TAU), 2.0);
-        vec3 hazardYellow = vec3(0.55, 0.42, 0.05);
-        vec3 hazardBlack = vec3(0.015, 0.015, 0.015);
-        vec3 frameBase = mix(hazardBlack, hazardYellow, stripe);
+        vec3 panelBase = vec3(0.07, 0.08, 0.075);
+        vec3 panelHighlight = vec3(0.16, 0.18, 0.17);
+        col = mix(panelBase, panelHighlight, diff + rim * 0.4);
 
-        float spec = pow(max(dot(reflect(rd, sn), -rd), 0.0), 20.0);
-        col = frameBase * (diff + rim * 0.2) + vec3(0.4) * spec * 0.2;
-        col += cableGlow * 0.3 + cableGI * 0.06;
+        // Door seam down the middle
+        float seam = smoothstep(0.012, 0.0, abs(tangential));
+        col = mix(col, vec3(0.02), seam * 0.5);
+
+        // Bright bezel edge around the cabinet door
+        float edgeX = smoothstep(0.02, 0.0, abs(abs(tangential) - 0.16));
+        float edgeY = smoothstep(0.02, 0.0, abs(abs(zLocal) - 0.21));
+        col += vec3(0.18, 0.19, 0.18) * max(edgeX, edgeY) * 0.5;
+
+        // Small blinking status LED
+        float ledDist = length(vec2(tangential - 0.1, zLocal - 0.15));
+        float ledMask = smoothstep(0.025, 0.015, ledDist);
+        float blinkPhase = hash(panelIdx * 211.0) * TAU;
+        float blink = smoothstep(0.4, 0.6, sin(time * 2.0 + blinkPhase) * 0.5 + 0.5);
+        vec3 ledColor = mix(vec3(0.15, 0.9, 0.2), vec3(0.9, 0.15, 0.1), step(0.5, hash(panelIdx * 223.0)));
+        col += ledColor * ledMask * blink * 1.2;
+
+        col += cableGlow * 0.1 + cableGI * 0.02;
+      } else if (hitType == 5) {
+        // Pipe flange - dark metal joint collar
+        vec3 flangeBase = vec3(0.1, 0.1, 0.11);
+        vec3 flangeHighlight = vec3(0.22, 0.22, 0.24);
+
+        float spec = pow(max(dot(reflect(rd, sn), -rd), 0.0), 24.0);
+        col = mix(flangeBase, flangeHighlight, diff) + vec3(0.4) * spec * 0.25;
+        col += cableGlow * 0.1 + cableGI * 0.03;
+      } else if (hitType == 4) {
+        // Pipe - plain brushed metal conduit
+        vec3 pipeBase = vec3(0.09, 0.095, 0.1);
+        vec3 pipeHighlight = vec3(0.2, 0.21, 0.23);
+
+        float spec = pow(max(dot(reflect(rd, sn), -rd), 0.0), 40.0);
+        col = mix(pipeBase, pipeHighlight, diff) + vec3(0.5) * spec * 0.3;
+        col += cableGlow * 0.15 + cableGI * 0.04;
       } else if (hitType == 3) {
         // Connector - dark metallic box with indicator light
         vec3 connBase = vec3(0.02, 0.02, 0.025);
