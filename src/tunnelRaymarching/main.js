@@ -74,18 +74,10 @@ export const main = () => {
     ampB: 1.7,
     tunnelRadius: 1.0,
     twist: 0.15,
-    style: 0,
   };
 
   const gui = new GUI({ title: 'Tunnel Raymarching' });
   gui.add(params, 'speed', 0.1, 3.0, 0.1).name('Speed');
-  gui.add(params, 'style', {
-    'Wireframe': 0,
-    'Neon': 1,
-    'Truchet': 2,
-    'Hex': 3,
-    'Warp': 4,
-  }).name('Style');
 
   const pathFolder = gui.addFolder('Path');
   pathFolder.add(params, 'freqA', 0.05, 0.5, 0.01).name('Freq A');
@@ -164,7 +156,6 @@ export const main = () => {
       iAmpB: params.ampB,
       iTunnelRadius: params.tunnelRadius,
       iTwist: params.twist,
-      iStyle: params.style,
     });
   }
 
@@ -209,7 +200,6 @@ export const main = () => {
     shader.setUniform('iAmpB', params.ampB);
     shader.setUniform('iTunnelRadius', params.tunnelRadius);
     shader.setUniform('iTwist', params.twist);
-    shader.setUniform('iStyle', params.style);
     shader.draw();
 
     if (isPlaying) frameCount++;

@@ -16,7 +16,6 @@ uniform float iAmpA;
 uniform float iAmpB;
 uniform float iTunnelRadius;
 uniform float iTwist;
-uniform int iStyle;
 
 #define PI 3.1415926535898
 #define TAU 6.28318530718
@@ -319,202 +318,6 @@ vec3 styleWireframe(vec3 sp, vec3 sn, vec3 rd, float t, vec3 cableGlow, vec3 cab
   return col * fog;
 }
 
-// Style 1: Neon Glow
-vec3 styleNeon(vec3 sp, vec3 sn, vec3 rd, float t, vec3 cableGlow, vec3 cableGI) {
-  vec2 localPos = sp.xy - path(sp.z);
-  float angle = atan(localPos.y, localPos.x) - twistAngle(sp.z);
-
-  // Pulsing rings
-  float ringPhase = sp.z * 0.3 - iTime * 2.0;
-  float ring = sin(ringPhase);
-  ring = smoothstep(0.7, 1.0, ring);
-
-  // Sector glow
-  float sectors = 6.0;
-  float sectorAngle = mod(angle + iTime * 0.5, TAU / sectors);
-  float sectorGlow = smoothstep(0.3, 0.0, abs(sectorAngle - PI / sectors));
-
-  // Depth fog
-  float depth = t / 50.0;
-  float fog = exp(-depth * depth * 0.5);
-
-  // Colors - darker base
-  vec3 col1 = vec3(0.6, 0.05, 0.3);  // Darker Pink
-  vec3 col2 = vec3(0.05, 0.3, 0.6);  // Darker Blue
-  vec3 col3 = vec3(0.3, 0.0, 0.6);  // Darker Purple
-
-  float colorMix = sin(sp.z * 0.1 + iTime * 0.5) * 0.5 + 0.5;
-  vec3 glowColor = mix(col1, col2, colorMix);
-  glowColor = mix(glowColor, col3, sectorGlow * 0.5);
-
-  // Rim lighting
-  float rim = pow(1.0 - abs(dot(sn, rd)), 3.0);
-
-  vec3 col = glowColor * (ring * 0.5 + sectorGlow * 0.3 + rim * 0.2);
-  col += vec3(0.01, 0.005, 0.015);  // Darker ambient
-
-  // Add cable glow and GI
-  col += cableGlow;
-  col += cableGI * 0.1;
-
-  return col * fog;
-}
-
-// Style 2: Truchet Pattern (Black & White)
-vec3 styleTruchet(vec3 sp, vec3 sn, vec3 rd, float t, vec3 cableGlow, vec3 cableGI) {
-  vec2 localPos = sp.xy - path(sp.z);
-  float angle = atan(localPos.y, localPos.x) - twistAngle(sp.z);
-
-  // UV for truchet grid
-  vec2 uv = vec2(angle / TAU * 10.0, sp.z * 0.8);
-  vec2 cellID = mod(floor(uv), 1000.0);  // Prevent float precision loss
-  vec2 cellF = fract(uv);
-
-  // Random rotation per cell (0 or 1)
-  float rot = step(0.5, hash2(cellID));
-
-  // Flip UV based on rotation
-  if (rot > 0.5) {
-    cellF = vec2(1.0 - cellF.x, cellF.y);
-  }
-
-  // Distance to quarter circles (corners)
-  float d1 = length(cellF) - 0.5;
-  float d2 = length(cellF - vec2(1.0, 1.0)) - 0.5;
-
-  // Truchet curve
-  float curve = min(abs(d1), abs(d2));
-  float lineWidth = 0.08;
-  float pattern = smoothstep(lineWidth, lineWidth * 0.5, curve);
-
-  // Depth fog
-  float depth = t / 50.0;
-  float fog = exp(-depth * depth * 0.6);
-
-  // Darker black and white base
-  vec3 col = vec3(pattern * 0.4);
-
-  // Subtle lighting for depth
-  float diff = max(dot(sn, -rd), 0.0) * 0.3 + 0.5;
-  col *= diff;
-
-  // Add cable glow and GI
-  col += cableGlow;
-  col += cableGI * 0.2;
-
-  return col * fog;
-}
-
-// Style 3: Hex Tiling
-vec3 styleHexTiling(vec3 sp, vec3 sn, vec3 rd, float t, vec3 cableGlow, vec3 cableGI) {
-  vec2 localPos = sp.xy - path(sp.z);
-  float angle = atan(localPos.y, localPos.x) - twistAngle(sp.z);
-
-  // UV for hex grid
-  vec2 uv = vec2(angle / TAU * 8.0, sp.z * 0.6);
-
-  // Hex grid constants
-  const vec2 s = vec2(1.0, 1.732050808);  // sqrt(3)
-  const vec2 h = s * 0.5;
-
-  // Two offset grids
-  vec2 a = mod(uv, s) - h;
-  vec2 b = mod(uv - h, s) - h;
-
-  // Pick closer hex center
-  vec2 gv = dot(a, a) < dot(b, b) ? a : b;
-  vec2 hexID = uv - gv;
-
-  // Distance to hex edge
-  vec2 hv = abs(gv);
-  float hexDist = max(hv.x * 0.5 + hv.y * 0.866025, hv.x);
-
-  // Stable cell ID (mod to prevent float precision loss at large values)
-  vec2 cellID = mod(floor(hexID * 100.0 + 0.5), 1000.0);
-  float cellRand = hash2(cellID);
-  float cellRand2 = hash2(cellID + vec2(17.0, 31.0));
-
-  // Cell pulsing - select ~20% of cells to pulse
-  float isPulsing = step(0.8, cellRand);
-  float pulsePhase = cellRand2 * TAU;
-  float pulse = sin(iTime * 1.5 + pulsePhase) * 0.5 + 0.5;
-  float cellBrightness = 1.0 + isPulsing * pulse * 0.8;
-
-  // Hex edge
-  float edge = smoothstep(0.5, 0.42, hexDist);
-
-  // Depth fog
-  float depth = t / 50.0;
-  float fog = exp(-depth * depth * 0.5);
-
-  // Darker cool color palette
-  vec3 baseColor = vec3(0.03, 0.05, 0.08);  // Darker blue
-  vec3 cellColor = mix(
-    vec3(0.1, 0.18, 0.25),   // Darker Sky blue
-    vec3(0.15, 0.22, 0.28),  // Darker Light blue
-    cellRand2
-  );
-  vec3 pulseColor = vec3(0.25, 0.4, 0.5);  // Darker cyan for pulsing cells
-
-  // Lighting
-  float diff = max(dot(sn, -rd), 0.0) * 0.3 + 0.5;
-
-  // Compose color - pulsing cells get brighter color
-  vec3 finalCellColor = mix(cellColor, pulseColor, isPulsing * pulse);
-  vec3 col = mix(baseColor, finalCellColor * cellBrightness, edge) * diff;
-
-  // Edge highlight - dimmer
-  float edgeLine = smoothstep(0.46, 0.48, hexDist) * smoothstep(0.5, 0.48, hexDist);
-  col += vec3(0.2, 0.3, 0.4) * edgeLine * 0.3;
-
-  // Add cable glow and GI
-  col += cableGlow;
-  col += cableGI * 0.12;
-
-  return col * fog;
-}
-
-// Style 4: Warp Speed
-vec3 styleWarp(vec3 sp, vec3 sn, vec3 rd, float t, vec3 cableGlow, vec3 cableGI) {
-  vec2 localPos = sp.xy - path(sp.z);
-  float angle = atan(localPos.y, localPos.x) - twistAngle(sp.z);
-
-  // Speed streaks
-  float streakAngle = floor(angle * 30.0 / TAU);
-  float streakRand = hash(streakAngle);
-  float streak = step(0.8, streakRand);
-
-  // Streak animation
-  float streakPhase = fract(sp.z * 0.1 - iTime * 3.0 + streakRand);
-  float streakFade = smoothstep(0.0, 0.2, streakPhase) * smoothstep(1.0, 0.5, streakPhase);
-
-  // Depth
-  float depth = t / 80.0;
-  float fog = exp(-depth * 0.5);
-
-  // Star field
-  vec2 starUV = vec2(angle * 20.0, sp.z * 2.0);
-  vec2 starID = mod(floor(starUV), 1000.0);  // Prevent float precision loss
-  float star = step(0.995, hash2(starID));
-  float twinkle = 0.5 + 0.5 * sin(iTime * 8.0 + hash2(starID) * 100.0);
-
-  // Colors - darker
-  vec3 col = vec3(0.0, 0.01, 0.02);  // Deeper space
-
-  // Dimmer streaks
-  vec3 streakColor = mix(vec3(0.3, 0.4, 0.5), vec3(0.6), streakRand);
-  col += streakColor * streak * streakFade * 1.0;
-
-  // Dimmer stars
-  col += vec3(0.5, 0.55, 0.6) * star * twinkle;
-
-  // Add cable glow and GI
-  col += cableGlow;
-  col += cableGI * 0.1;
-
-  return col * fog;
-}
-
 void main() {
   // Screen coordinates
   vec2 uv = (gl_FragCoord.xy - iResolution.xy * 0.5) / iResolution.y;
@@ -617,34 +420,12 @@ void main() {
       vec3 cableGlow = calcCableGlow(sp, time);
       vec3 cableGI = calcCableGI(sp, sn, time);
 
-      // Apply style with lighting
-      if (iStyle == 0) {
-        col = styleWireframe(sp, sn, rd, t, cableGlow, cableGI);
-      } else if (iStyle == 1) {
-        col = styleNeon(sp, sn, rd, t, cableGlow, cableGI);
-      } else if (iStyle == 2) {
-        col = styleTruchet(sp, sn, rd, t, cableGlow, cableGI);
-      } else if (iStyle == 3) {
-        col = styleHexTiling(sp, sn, rd, t, cableGlow, cableGI);
-      } else {
-        col = styleWarp(sp, sn, rd, t, cableGlow, cableGI);
-      }
+      col = styleWireframe(sp, sn, rd, t, cableGlow, cableGI);
     }
   } else {
     // Background for non-hit rays - darker
     float fadeFog = exp(-t * 0.02);
-
-    if (iStyle == 0) {
-      col = vec3(0.0, 0.02, 0.03) * fadeFog;
-    } else if (iStyle == 1) {
-      col = vec3(0.02, 0.0, 0.03) * fadeFog;
-    } else if (iStyle == 2) {
-      col = vec3(0.01, 0.01, 0.01) * fadeFog;
-    } else if (iStyle == 3) {
-      col = vec3(0.02, 0.03, 0.05) * fadeFog;
-    } else {
-      col = vec3(0.0, 0.005, 0.01) * fadeFog;
-    }
+    col = vec3(0.0, 0.02, 0.03) * fadeFog;
   }
 
   fragColor = vec4(col, 1.0);
