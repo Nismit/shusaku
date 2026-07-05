@@ -15,6 +15,7 @@ uniform float iFreqB;
 uniform float iAmpA;
 uniform float iAmpB;
 uniform float iTunnelRadius;
+uniform float iBoostTime;
 uniform int iStyle;
 
 #define PI 3.1415926535898
@@ -442,7 +443,7 @@ void main() {
   vec2 uv = (gl_FragCoord.xy - iResolution.xy * 0.5) / iResolution.y;
 
   // Camera Setup
-  float time = iTime * iSpeed;
+  float time = iTime * iSpeed + iBoostTime;
   vec3 lookAt = vec3(0.0, 0.0, time * 4.0);
   vec3 camPos = lookAt + vec3(0.0, 0.0, -0.1);
 

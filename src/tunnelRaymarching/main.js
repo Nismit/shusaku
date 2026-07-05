@@ -154,6 +154,7 @@ export const main = () => {
       iTime: time,
       iResolution: [fbo.width, fbo.height],
       iSpeed: params.speed,
+      iBoostTime: boostTime,
       iFreqA: params.freqA,
       iFreqB: params.freqB,
       iAmpA: params.ampA,
@@ -178,6 +179,22 @@ export const main = () => {
     tempFBO.dispose();
   }
 
+  // --- Boost (click/touch to accelerate) ---
+  let boostTarget = 0.0;
+  let boostProgress = 0.0;
+  let boostValue = 0.0;
+  let boostTime = 0.0;
+  let lastTime = 0.0;
+  const boostRampUp = 0.012;
+  const boostRampDown = 0.008;
+
+  canvas.addEventListener('mousedown', () => { boostTarget = 1.0; });
+  canvas.addEventListener('mouseup', () => { boostTarget = 0.0; });
+  canvas.addEventListener('mouseleave', () => { boostTarget = 0.0; });
+  canvas.addEventListener('touchstart', (e) => { e.preventDefault(); boostTarget = 1.0; }, { passive: false });
+  canvas.addEventListener('touchend', () => { boostTarget = 0.0; });
+  canvas.addEventListener('touchcancel', () => { boostTarget = 0.0; });
+
   // --- Event listeners ---
   if (playPauseBtn) playPauseBtn.addEventListener('click', togglePlayPause);
   if (resetBtn) resetBtn.addEventListener('click', resetTimer);
@@ -194,10 +211,24 @@ export const main = () => {
   const render = () => {
     const time = timer.getElapsedTime();
 
+    // Smooth boost with ease-in-out
+    if (boostTarget > 0.0) {
+      boostProgress = Math.min(1.0, boostProgress + boostRampUp);
+    } else {
+      boostProgress = Math.max(0.0, boostProgress - boostRampDown);
+    }
+    boostValue = boostProgress * boostProgress * (3.0 - 2.0 * boostProgress);
+
+    // Accumulate boost time from delta
+    const dt = time - lastTime;
+    lastTime = time;
+    boostTime += dt * boostValue * 1.0;
+
     shader.use();
     shader.setUniform('iTime', time);
     shader.setUniform('iResolution', [canvas.width, canvas.height]);
     shader.setUniform('iSpeed', params.speed);
+    shader.setUniform('iBoostTime', boostTime);
     shader.setUniform('iFreqA', params.freqA);
     shader.setUniform('iFreqB', params.freqB);
     shader.setUniform('iAmpA', params.ampA);
