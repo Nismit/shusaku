@@ -17,6 +17,7 @@ uniform float iAmpB;
 uniform float iTunnelRadius;
 uniform float iBoostTime;
 uniform int iStyle;
+uniform int iMaxSteps;
 
 #define PI 3.1415926535898
 #define TAU 6.28318530718
@@ -469,7 +470,7 @@ void main() {
   float t = 0.0;
   float dt;
 
-  for (int i = 0; i < 96; i++) {
+  for (int i = 0; i < iMaxSteps; i++) {
     dt = map(camPos + rd * t);
     if (dt < 0.002 || t > 120.0) break;
     t += dt * 0.8;
