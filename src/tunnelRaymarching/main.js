@@ -61,9 +61,20 @@ export const main = () => {
   // --- FBO for snapshot ---
   const sceneFBO = chotto.createFramebuffer(canvas.width, canvas.height);
 
-  window.addEventListener('resize', () => {
+  // DPR-aware sizing: fitWindow() uses CSS pixels; we override to physical pixels
+  // so raymarched edges stay crisp instead of blocky/jaggy on high-DPI mobile screens
+  // (cap at 2 to avoid overloading mobile GPUs with the per-pixel raymarch loop)
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const applyDPR = () => {
+    canvas.width = Math.round(window.innerWidth * dpr);
+    canvas.height = Math.round(window.innerHeight * dpr);
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    gl.viewport(0, 0, canvas.width, canvas.height);
     sceneFBO.resize(canvas.width, canvas.height);
-  });
+  };
+  applyDPR();
+  window.addEventListener('resize', applyDPR);
 
   // --- GUI ---
   const params = {
