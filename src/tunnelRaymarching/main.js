@@ -5,8 +5,12 @@ import GUI from '../libs/lil-gui.esm.min.js';
 
 import tunnelFrag from './shaders/tunnel.frag?raw';
 
-// Raymarch step budget - lowered on mobile/tablet GPUs to keep frame time down
-const MAX_STEPS = isMobile() ? 56 : isTablet() ? 72 : 96;
+// Raymarch step budget - lowered on mobile/tablet GPUs to keep frame time down.
+// Mobile also gets a faster convergence rate and a shorter max ray distance,
+// since it was still missing 60fps at 56 steps alone.
+const MAX_STEPS = isMobile() ? 40 : isTablet() ? 72 : 96;
+const STEP_SCALE = isMobile() ? 0.9 : 0.8;
+const MAX_DIST = isMobile() ? 80.0 : 120.0;
 
 const SIZE_PRESETS = {
   '1080p': { width: 1920, height: 1080 },
@@ -177,6 +181,8 @@ export const main = () => {
       iTunnelRadius: params.tunnelRadius,
       iStyle: params.style,
       iMaxSteps: MAX_STEPS,
+      iStepScale: STEP_SCALE,
+      iMaxDist: MAX_DIST,
     });
   }
 
@@ -252,6 +258,8 @@ export const main = () => {
     shader.setUniform('iTunnelRadius', params.tunnelRadius);
     shader.setUniform('iStyle', params.style);
     shader.setUniform('iMaxSteps', MAX_STEPS);
+    shader.setUniform('iStepScale', STEP_SCALE);
+    shader.setUniform('iMaxDist', MAX_DIST);
     shader.draw();
 
     if (isPlaying) frameCount++;
