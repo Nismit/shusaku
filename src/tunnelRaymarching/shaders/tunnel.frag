@@ -441,8 +441,13 @@ void main() {
   vec3 right = normalize(vec3(forward.z, 0.0, -forward.x));
   vec3 up = cross(forward, right);
 
+  // Camera roll twist
+  float twist = sin(time * 0.4) * 0.3 + sin(time * 0.17) * 0.15;
+  vec3 right2 = right * cos(twist) + up * sin(twist);
+  vec3 up2 = -right * sin(twist) + up * cos(twist);
+
   // Ray direction
-  vec3 rd = normalize(forward + FOV * uv.x * right + FOV * uv.y * up);
+  vec3 rd = normalize(forward + FOV * uv.x * right2 + FOV * uv.y * up2);
 
   // Raymarching
   float t = 0.0;
