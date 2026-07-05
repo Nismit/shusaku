@@ -79,11 +79,9 @@ export const main = () => {
   const gui = new GUI({ title: 'Tunnel Raymarching' });
   gui.add(params, 'speed', 0.1, 3.0, 0.1).name('Speed');
   gui.add(params, 'style', {
-    'Wireframe': 0,
-    'Neon': 1,
-    'Truchet': 2,
-    'Hex': 3,
-    'Warp': 4,
+    'Warp': 0,
+    'Truchet': 1,
+    'Hex': 2,
   }).name('Style');
 
   const pathFolder = gui.addFolder('Path');
