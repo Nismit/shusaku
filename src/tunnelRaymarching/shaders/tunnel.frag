@@ -365,39 +365,56 @@ vec3 styleHexTiling(vec3 sp, vec3 sn, vec3 rd, float t, vec3 cableGlow, vec3 cab
   return col * fog;
 }
 
+// Truchet pattern value (reusable)
+float truchetPattern(vec2 localPos, float z) {
+  float angle = atan(localPos.y, localPos.x);
+  vec2 uv = vec2(angle / TAU * 10.0, z * 0.8);
+  vec2 cellID = mod(floor(uv), 1000.0);
+  vec2 cellF = fract(uv);
+
+  float rot = step(0.5, hash2(cellID));
+  if (rot > 0.5) {
+    cellF.x = 1.0 - cellF.x;
+  }
+
+  // Diagonal line: distance from cellF to the line from (0,0) to (1,1)
+  float d = abs(cellF.x - cellF.y) / sqrt(2.0);
+  float lineWidth = 0.08;
+  return smoothstep(lineWidth, lineWidth * 0.5, d);
+}
+
 // Style 0: Warp Speed
 vec3 styleWarp(vec3 sp, vec3 sn, vec3 rd, float t, vec3 cableGlow, vec3 cableGI) {
   vec2 localPos = sp.xy - path(sp.z);
   float angle = atan(localPos.y, localPos.x);
 
-  // Speed streaks
-  float streakAngle = floor(angle * 30.0 / TAU);
-  float streakRand = hash(streakAngle);
-  float streak = step(0.8, streakRand);
-
-  // Streak animation
-  float streakPhase = fract(sp.z * 0.1 - iTime * 3.0 + streakRand);
-  float streakFade = smoothstep(0.0, 0.2, streakPhase) * smoothstep(1.0, 0.5, streakPhase);
-
   // Depth
   float depth = t / 80.0;
   float fog = exp(-depth * 0.5);
 
-  // Star field
+  // Warp base: streaks + stars
+  float streakAngle = floor(angle * 30.0 / TAU);
+  float streakRand = hash(streakAngle);
+  float streak = step(0.8, streakRand);
+
+  float streakPhase = fract(sp.z * 0.1 - iTime * 3.0 + streakRand);
+  float streakFade = smoothstep(0.0, 0.2, streakPhase) * smoothstep(1.0, 0.5, streakPhase);
+
   vec2 starUV = vec2(angle * 20.0, sp.z * 2.0);
-  vec2 starID = mod(floor(starUV), 1000.0);  // Prevent float precision loss
+  vec2 starID = mod(floor(starUV), 1000.0);
   float star = step(0.995, hash2(starID));
   float twinkle = 0.5 + 0.5 * sin(iTime * 8.0 + hash2(starID) * 100.0);
 
-  // Colors - darker
-  vec3 col = vec3(0.0, 0.01, 0.02);  // Deeper space
-
-  // Dimmer streaks
+  vec3 col = vec3(0.0, 0.01, 0.02);
   vec3 streakColor = mix(vec3(0.3, 0.4, 0.5), vec3(0.6), streakRand);
   col += streakColor * streak * streakFade * 1.0;
-
-  // Dimmer stars
   col += vec3(0.5, 0.55, 0.6) * star * twinkle;
+
+  // Overlay Truchet on bottom half with gradient transition
+  float normalizedY = localPos.y / length(localPos);
+  float truchetBlend = smoothstep(0.15, -0.15, normalizedY);
+  float pattern = truchetPattern(localPos, sp.z);
+  col += vec3(0.35, 0.45, 0.55) * pattern * 0.25 * truchetBlend;
 
   col += cableGlow;
   col += cableGI * 0.1;
