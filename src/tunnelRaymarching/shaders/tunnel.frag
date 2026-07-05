@@ -392,29 +392,44 @@ vec3 styleWarp(vec3 sp, vec3 sn, vec3 rd, float t, vec3 cableGlow, vec3 cableGI)
   float depth = t / 80.0;
   float fog = exp(-depth * 0.5);
 
-  // Warp base: streaks + stars
-  float streakAngle = floor(angle * 30.0 / TAU);
-  float streakRand = hash(streakAngle);
-  float streak = step(0.8, streakRand);
+  // Streak proximity: angular distance to nearest streak line
+  float angularPos = angle * 30.0 / TAU;
+  float sectorIdx = floor(angularPos);
+  float fracInSector = fract(angularPos);
+  float distToCenter = abs(fracInSector - 0.5);
 
+  float currentStreak = step(0.8, hash(sectorIdx));
+  float prevStreak = step(0.8, hash(sectorIdx - 1.0));
+  float nextStreak = step(0.8, hash(sectorIdx + 1.0));
+
+  float proximityToCurrent = currentStreak * (1.0 - distToCenter * 2.0);
+  float proximityToPrev = prevStreak * (1.0 - (1.0 - fracInSector) * 2.0);
+  float proximityToNext = nextStreak * (1.0 - fracInSector * 2.0);
+  float streakProximity = max(max(proximityToCurrent, max(proximityToPrev, 0.0)), max(proximityToNext, 0.0));
+
+  // Streak animation
+  float streakRand = hash(sectorIdx);
   float streakPhase = fract(sp.z * 0.1 - iTime * 3.0 + streakRand);
   float streakFade = smoothstep(0.0, 0.2, streakPhase) * smoothstep(1.0, 0.5, streakPhase);
 
+  // Streaks + stars
   vec2 starUV = vec2(angle * 20.0, sp.z * 2.0);
   vec2 starID = mod(floor(starUV), 1000.0);
   float star = step(0.995, hash2(starID));
   float twinkle = 0.5 + 0.5 * sin(iTime * 8.0 + hash2(starID) * 100.0);
 
   vec3 col = vec3(0.0, 0.01, 0.02);
-  vec3 streakColor = mix(vec3(0.3, 0.4, 0.5), vec3(0.6), streakRand);
-  col += streakColor * streak * streakFade * 1.0;
   col += vec3(0.5, 0.55, 0.6) * star * twinkle;
 
-  // Overlay Truchet on bottom half with gradient transition
-  float normalizedY = localPos.y / length(localPos);
-  float truchetBlend = smoothstep(0.15, -0.15, normalizedY);
+  // Full-surface Truchet, fading out near streaks
+  float truchetFade = 1.0 - smoothstep(0.0, 0.6, streakProximity);
   float pattern = truchetPattern(localPos, sp.z);
-  col += vec3(0.35, 0.45, 0.55) * pattern * 0.25 * truchetBlend;
+  col += vec3(0.35, 0.45, 0.55) * pattern * 0.25 * truchetFade;
+
+  // Streaks: solid color override
+  vec3 streakColor = mix(vec3(0.3, 0.4, 0.5), vec3(0.6), streakRand);
+  float streakMask = currentStreak * streakFade;
+  col = mix(col, streakColor, streakMask);
 
   col += cableGlow;
   col += cableGI * 0.1;
