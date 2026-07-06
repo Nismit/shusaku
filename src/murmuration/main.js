@@ -1,7 +1,7 @@
 import { chottoGPU } from 'chottogpu';
 import { Timer } from '../libs/Timer.js';
 import { PointerInput } from '../libs/PointerInput.js';
-import GUI from '../libs/lil-gui.esm.min.js';
+import GUI from '../libs/gui.js';
 
 import initWGSL from './shaders/init.wgsl?raw';
 import updateWGSL from './shaders/update.wgsl?raw';

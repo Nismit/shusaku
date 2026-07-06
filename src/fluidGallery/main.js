@@ -1,6 +1,6 @@
 import { chottoGL } from '../libs/esChottoGL.js';
 import { PointerInput } from '../libs/PointerInput.js';
-import GUI from '../libs/lil-gui.esm.min.js';
+import GUI from '../libs/gui.js';
 
 import advectionFrag from './shaders/advection.frag?raw';
 import splatFrag from './shaders/splat.frag?raw';

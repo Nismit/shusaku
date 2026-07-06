@@ -1,6 +1,6 @@
 import { chottoGL } from '../libs/esChottoGL.js';
 import { Timer } from '../libs/Timer.js';
-import GUI from '../libs/lil-gui.esm.min.js';
+import GUI from '../libs/gui.js';
 
 import mainFragment from './shaders/main.frag?raw';
 

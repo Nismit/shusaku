@@ -1,5 +1,5 @@
 import { chottoGL } from '../libs/esChottoGL.js';
-import GUI from '../libs/lil-gui.esm.min.js';
+import GUI from '../libs/gui.js';
 
 import mirrorSource from './shaders/mirrorFoldTorus.frag?raw';
 import polarSource from './shaders/polarFoldTorus.frag?raw';

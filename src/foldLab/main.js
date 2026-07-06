@@ -1,5 +1,5 @@
 import { chottoGL } from '../libs/esChottoGL.js';
-import GUI from '../libs/lil-gui.esm.min.js';
+import GUI from '../libs/gui.js';
 
 import tetrahedralSource from './shaders/tetrahedralFold.frag?raw';
 import sinusoidalSource from './shaders/sinusoidalWarpFold.frag?raw';

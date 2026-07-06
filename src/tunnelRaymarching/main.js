@@ -1,7 +1,7 @@
 import { chottoGPU } from 'chottogpu';
 import { Timer } from '../libs/Timer.js';
 import { isMobile, isTablet } from '../libs/DeviceDetect.js';
-import GUI from '../libs/lil-gui.esm.min.js';
+import GUI from '../libs/gui.js';
 
 import tunnelWGSL from './shaders/tunnel.wgsl?raw';
 
