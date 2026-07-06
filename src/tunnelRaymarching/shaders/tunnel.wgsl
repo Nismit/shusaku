@@ -11,12 +11,9 @@ struct Params {
   ampA: f32,
   ampB: f32,
   tunnelRadius: f32,
-  style: i32,
   maxSteps: i32,
   stepScale: f32,
   maxDist: f32,
-  _pad0: f32,
-  _pad1: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Params;
@@ -26,10 +23,6 @@ const TAU: f32 = 6.28318530718;
 const NUM_CABLES: i32 = 4;
 const RING_SPACING: f32 = 2.5;
 const CONNECTOR_SPACING: f32 = 8.0;
-
-fn glsl_mod(x: vec2f, y: vec2f) -> vec2f {
-  return x - y * floor(x / y);
-}
 
 fn glsl_mod_f(x: vec2f, y: f32) -> vec2f {
   return x - y * floor(x / y);
@@ -256,95 +249,6 @@ fn truchetPattern(localPos: vec2f, z: f32) -> f32 {
   return smoothstep(lineWidth, lineWidth * 0.5, d);
 }
 
-fn styleTruchet(sp: vec3f, sn: vec3f, rd: vec3f, t: f32, cableGlow: vec3f, cableGI: vec3f) -> vec3f {
-  let localPos = sp.xy - path(sp.z);
-  let angle = atan2(localPos.y, localPos.x);
-
-  let uv = vec2f(angle / TAU * 10.0, sp.z * 0.8);
-  let cellID = glsl_mod_f(floor(uv), 1000.0);
-  var cellF = fract(uv);
-
-  let rot = step(0.5, hash2(cellID));
-  if (rot > 0.5) {
-    cellF = vec2f(1.0 - cellF.x, cellF.y);
-  }
-
-  let d1 = length(cellF) - 0.5;
-  let d2 = length(cellF - vec2f(1.0, 1.0)) - 0.5;
-
-  let curve = min(abs(d1), abs(d2));
-  let lineWidth: f32 = 0.08;
-  let pattern = smoothstep(lineWidth, lineWidth * 0.5, curve);
-
-  let depth = t / 50.0;
-  let fog = exp(-depth * depth * 0.6);
-
-  var col = vec3f(pattern * 0.4);
-
-  let diff = max(dot(sn, -rd), 0.0) * 0.3 + 0.5;
-  col *= diff;
-
-  col += cableGlow;
-  col += cableGI * 0.2;
-
-  return col * fog;
-}
-
-fn styleHexTiling(sp: vec3f, sn: vec3f, rd: vec3f, t: f32, cableGlow: vec3f, cableGI: vec3f) -> vec3f {
-  let localPos = sp.xy - path(sp.z);
-  let angle = atan2(localPos.y, localPos.x);
-
-  let uv = vec2f(angle / TAU * 8.0, sp.z * 0.6);
-
-  let s = vec2f(1.0, 1.732050808);
-  let h = s * 0.5;
-
-  let a = glsl_mod(uv, s) - h;
-  let b = glsl_mod(uv - h, s) - h;
-
-  var gv: vec2f;
-  if (dot(a, a) < dot(b, b)) { gv = a; } else { gv = b; }
-  let hexID = uv - gv;
-
-  let hv = abs(gv);
-  let hexDist = max(hv.x * 0.5 + hv.y * 0.866025, hv.x);
-
-  let cellID = glsl_mod_f(floor(hexID * 100.0 + 0.5), 1000.0);
-  let cellRand = hash2(cellID);
-  let cellRand2 = hash2(cellID + vec2f(17.0, 31.0));
-
-  let isPulsing = step(0.8, cellRand);
-  let pulsePhase = cellRand2 * TAU;
-  let pulse = sin(u.time * 1.5 + pulsePhase) * 0.5 + 0.5;
-  let cellBrightness = 1.0 + isPulsing * pulse * 0.8;
-
-  let edge = smoothstep(0.5, 0.42, hexDist);
-
-  let depth = t / 50.0;
-  let fog = exp(-depth * depth * 0.5);
-
-  let baseColor = vec3f(0.03, 0.05, 0.08);
-  let cellColor = mix(
-    vec3f(0.1, 0.18, 0.25),
-    vec3f(0.15, 0.22, 0.28),
-    cellRand2
-  );
-  let pulseColor = vec3f(0.25, 0.4, 0.5);
-
-  let diff = max(dot(sn, -rd), 0.0) * 0.3 + 0.5;
-
-  let finalCellColor = mix(cellColor, pulseColor, isPulsing * pulse);
-  var col = mix(baseColor, finalCellColor * cellBrightness, edge) * diff;
-
-  let edgeLine = smoothstep(0.46, 0.48, hexDist) * smoothstep(0.5, 0.48, hexDist);
-  col += vec3f(0.2, 0.3, 0.4) * edgeLine * 0.3;
-
-  col += cableGlow;
-  col += cableGI * 0.12;
-
-  return col * fog;
-}
-
 fn styleWarp(sp: vec3f, sn: vec3f, rd: vec3f, t: f32, cableGlow: vec3f, cableGI: vec3f) -> vec3f {
   let localPos = sp.xy - path(sp.z);
   let angle = atan2(localPos.y, localPos.x);
@@ -479,24 +383,12 @@ fn fs(@builtin(position) fragCoord: vec4f, @location(0) texCoord: vec2f) -> @loc
 
       col *= fog;
     } else {
-      if (u.style == 0) {
-        col = styleWarp(sp, sn, rd, t, cableGlow, cableGI);
-      } else if (u.style == 1) {
-        col = styleTruchet(sp, sn, rd, t, cableGlow, cableGI);
-      } else {
-        col = styleHexTiling(sp, sn, rd, t, cableGlow, cableGI);
-      }
+      col = styleWarp(sp, sn, rd, t, cableGlow, cableGI);
     }
   } else {
     let fadeFog = exp(-t * 0.02);
 
-    if (u.style == 0) {
-      col = vec3f(0.0, 0.005, 0.01) * fadeFog;
-    } else if (u.style == 1) {
-      col = vec3f(0.01, 0.01, 0.01) * fadeFog;
-    } else {
-      col = vec3f(0.02, 0.03, 0.05) * fadeFog;
-    }
+    col = vec3f(0.0, 0.005, 0.01) * fadeFog;
   }
 
   return vec4f(col, 1.0);
