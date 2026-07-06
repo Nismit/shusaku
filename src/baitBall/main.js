@@ -1,5 +1,6 @@
 import { chottoGL } from '../libs/esChottoGL.js';
 import { Timer } from '../libs/Timer.js';
+import { FPSGraph } from '../libs/FPSGraph.js';
 import { PointerInput } from '../libs/PointerInput.js';
 import GUI from '../libs/gui.js';
 
@@ -46,6 +47,7 @@ export const main = () => {
 
   const gl = chotto.gl;
   gl.viewport(0, 0, canvas.width, canvas.height);
+  const fpsGraph = new FPSGraph();
   const timer = new Timer();
   timer.start();
 
@@ -819,6 +821,7 @@ void main() {
       gl.viewport(0, 0, canvas.width, canvas.height);
     }
 
+    fpsGraph.update();
     requestAnimationFrame(render);
   };
 

@@ -1,5 +1,6 @@
 import { chottoGPU } from 'chottogpu';
 import { Timer } from '../libs/Timer.js';
+import { FPSGraph } from '../libs/FPSGraph.js';
 import { isMobile, isTablet } from '../libs/DeviceDetect.js';
 import GUI from '../libs/gui.js';
 
@@ -48,6 +49,7 @@ export const main = async () => {
 
   gui.close();
 
+  const fpsGraph = new FPSGraph();
   const timer = new Timer();
   let isPlaying = true;
   let frameCount = 0;
@@ -141,6 +143,7 @@ export const main = async () => {
       });
     });
 
+    fpsGraph.update();
     if (isPlaying) frameCount++;
     requestAnimationFrame(render);
   };

@@ -1,5 +1,6 @@
 import { chottoGPU } from 'chottogpu';
 import { Timer } from '../libs/Timer.js';
+import { FPSGraph } from '../libs/FPSGraph.js';
 import { PointerInput } from '../libs/PointerInput.js';
 import GUI from '../libs/gui.js';
 
@@ -314,6 +315,7 @@ export const main = async () => {
 
   buildGUI();
 
+  const fpsGraph = new FPSGraph();
   const timer = new Timer();
   timer.start();
   let lastRawTime = 0;
@@ -563,6 +565,7 @@ export const main = async () => {
       }
     });
 
+    fpsGraph.update();
     requestAnimationFrame(render);
   };
 
