@@ -1,90 +1,31 @@
-import { chottoGL } from '../libs/esChottoGL.js';
+import { chottoGPU } from 'chottogpu';
 import { Timer } from '../libs/Timer.js';
 import { isMobile, isTablet } from '../libs/DeviceDetect.js';
 import GUI from '../libs/lil-gui.esm.min.js';
 
-import tunnelFrag from './shaders/tunnel.frag?raw';
+import tunnelWGSL from './shaders/tunnel.wgsl?raw';
 
-// Raymarch step budget - lowered on mobile/tablet GPUs to keep frame time down.
-// Mobile also gets a faster convergence rate and a shorter max ray distance,
-// since it was still missing 60fps at 56 steps alone.
 const MAX_STEPS = isMobile() ? 40 : isTablet() ? 72 : 96;
 const STEP_SCALE = isMobile() ? 0.9 : 0.8;
 const MAX_DIST = isMobile() ? 80.0 : 120.0;
 
-const SIZE_PRESETS = {
-  '1080p': { width: 1920, height: 1080 },
-  '4K': { width: 3840, height: 2160 },
-  'Square 1080': { width: 1080, height: 1080 },
-  'Instagram': { width: 1080, height: 1350 },
-};
-
-function readPixelsFromFBO(fbo, gl) {
-  fbo.bind();
-  const pixels = new Uint8Array(fbo.width * fbo.height * 4);
-  gl.readPixels(0, 0, fbo.width, fbo.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-  fbo.unbind();
-  return pixels;
-}
-
-function pixelsToBlob(pixels, w, h) {
-  return new Promise((resolve) => {
-    const flipped = new Uint8Array(w * h * 4);
-    const rowSize = w * 4;
-    for (let y = 0; y < h; y++) {
-      const srcOffset = y * rowSize;
-      const dstOffset = (h - 1 - y) * rowSize;
-      flipped.set(pixels.subarray(srcOffset, srcOffset + rowSize), dstOffset);
-    }
-    const osc = new OffscreenCanvas(w, h);
-    const ctx = osc.getContext('2d');
-    const imageData = new ImageData(new Uint8ClampedArray(flipped.buffer), w, h);
-    ctx.putImageData(imageData, 0, 0);
-    osc.convertToBlob({ type: 'image/png' }).then(resolve);
-  });
-}
-
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-export const main = () => {
+export const main = async () => {
   const canvas = document.createElement('canvas');
+  canvas.style.width = '100vw';
+  canvas.style.height = '100vh';
   document.body.appendChild(canvas);
 
-  const timer = new Timer();
-  const chotto = chottoGL(canvas);
-  chotto.fitWindow();
+  const chotto = await chottoGPU(canvas);
+  const { device } = chotto;
 
-  const gl = chotto.gl;
+  const tunnelPipeline = chotto.pipeline({ fragment: tunnelWGSL });
 
-  // --- Shader ---
-  const shader = chotto.createShader({ fragment: tunnelFrag });
+  const UBO_SIZE = 64;
+  const uboAB = new ArrayBuffer(UBO_SIZE);
+  const uboF32 = new Float32Array(uboAB);
+  const uboI32 = new Int32Array(uboAB);
+  const ubo = chotto.buffer(UBO_SIZE, { uniform: true });
 
-  // --- FBO for snapshot ---
-  const sceneFBO = chotto.createFramebuffer(canvas.width, canvas.height);
-
-  // DPR-aware sizing: fitWindow() uses CSS pixels; we override to physical pixels
-  // so raymarched edges stay crisp instead of blocky/jaggy on high-DPI mobile screens
-  // (cap at 2 to avoid overloading mobile GPUs with the per-pixel raymarch loop)
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const applyDPR = () => {
-    canvas.width = Math.round(window.innerWidth * dpr);
-    canvas.height = Math.round(window.innerHeight * dpr);
-    canvas.style.width = window.innerWidth + 'px';
-    canvas.style.height = window.innerHeight + 'px';
-    gl.viewport(0, 0, canvas.width, canvas.height);
-    sceneFBO.resize(canvas.width, canvas.height);
-  };
-  applyDPR();
-  window.addEventListener('resize', applyDPR);
-
-  // --- GUI ---
   const params = {
     speed: 1.0,
     freqA: 0.15,
@@ -97,11 +38,7 @@ export const main = () => {
 
   const gui = new GUI({ title: 'Tunnel Raymarching' });
   gui.add(params, 'speed', 0.1, 3.0, 0.1).name('Speed');
-  gui.add(params, 'style', {
-    'Warp': 0,
-    'Truchet': 1,
-    'Hex': 2,
-  }).name('Style');
+  gui.add(params, 'style', { 'Warp': 0, 'Truchet': 1, 'Hex': 2 }).name('Style');
 
   const pathFolder = gui.addFolder('Path');
   pathFolder.add(params, 'freqA', 0.05, 0.5, 0.01).name('Freq A');
@@ -113,95 +50,10 @@ export const main = () => {
 
   gui.close();
 
-  // --- Timer controls ---
+  const timer = new Timer();
   let isPlaying = true;
   let frameCount = 0;
 
-  const playPauseBtn = document.getElementById('play-pause');
-  const resetBtn = document.getElementById('reset');
-  const timeDisplay = document.getElementById('time-display');
-  const snapshotBtn = document.getElementById('snapshot');
-  const sizePresetSelect = document.getElementById('size-preset');
-  const customSizeInputs = document.getElementById('custom-size');
-  const customWidth = document.getElementById('custom-width');
-  const customHeight = document.getElementById('custom-height');
-
-  if (sizePresetSelect) {
-    sizePresetSelect.addEventListener('change', () => {
-      if (customSizeInputs) {
-        customSizeInputs.style.display = sizePresetSelect.value === 'Custom' ? 'inline' : 'none';
-      }
-    });
-  }
-
-  function getSelectedPreset() {
-    const value = sizePresetSelect ? sizePresetSelect.value : '1080p';
-    if (value === 'Custom') {
-      return {
-        width: parseInt(customWidth?.value, 10) || 1920,
-        height: parseInt(customHeight?.value, 10) || 1080,
-      };
-    }
-    return SIZE_PRESETS[value] || SIZE_PRESETS['1080p'];
-  }
-
-  function updatePlayPauseLabel() {
-    if (playPauseBtn) playPauseBtn.textContent = isPlaying ? 'Pause' : 'Play';
-  }
-
-  function togglePlayPause() {
-    if (isPlaying) {
-      timer.stop();
-      isPlaying = false;
-    } else {
-      timer.start();
-      isPlaying = true;
-    }
-    updatePlayPauseLabel();
-  }
-
-  function resetTimer() {
-    timer.reset();
-    timer.start();
-    isPlaying = true;
-    frameCount = 0;
-    updatePlayPauseLabel();
-  }
-
-  function renderToFBO(fbo, time) {
-    fbo.pass(shader, {
-      iTime: time,
-      iResolution: [fbo.width, fbo.height],
-      iSpeed: params.speed,
-      iBoostTime: boostTime,
-      iFreqA: params.freqA,
-      iFreqB: params.freqB,
-      iAmpA: params.ampA,
-      iAmpB: params.ampB,
-      iTunnelRadius: params.tunnelRadius,
-      iStyle: params.style,
-      iMaxSteps: MAX_STEPS,
-      iStepScale: STEP_SCALE,
-      iMaxDist: MAX_DIST,
-    });
-  }
-
-  async function captureSnapshot() {
-    const { width, height } = getSelectedPreset();
-    const tempFBO = chotto.createFramebuffer(width, height);
-
-    const time = timer.getElapsedTime();
-    renderToFBO(tempFBO, time);
-
-    const pixels = readPixelsFromFBO(tempFBO, gl);
-    const blob = await pixelsToBlob(pixels, width, height);
-    const timestamp = Date.now();
-    downloadBlob(blob, `tunnel_raymarching_${timestamp}.png`);
-
-    tempFBO.dispose();
-  }
-
-  // --- Boost (click/touch to accelerate) ---
   let boostTarget = 0.0;
   let boostProgress = 0.0;
   let boostValue = 0.0;
@@ -217,10 +69,28 @@ export const main = () => {
   canvas.addEventListener('touchend', () => { boostTarget = 0.0; });
   canvas.addEventListener('touchcancel', () => { boostTarget = 0.0; });
 
-  // --- Event listeners ---
-  if (playPauseBtn) playPauseBtn.addEventListener('click', togglePlayPause);
-  if (resetBtn) resetBtn.addEventListener('click', resetTimer);
-  if (snapshotBtn) snapshotBtn.addEventListener('click', captureSnapshot);
+  function togglePlayPause() {
+    if (isPlaying) { timer.stop(); isPlaying = false; }
+    else { timer.start(); isPlaying = true; }
+  }
+
+  function resetTimer() {
+    timer.reset();
+    timer.start();
+    isPlaying = true;
+    frameCount = 0;
+  }
+
+  async function captureSnapshot() {
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tunnel_raymarching_${Date.now()}.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   window.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
@@ -229,11 +99,16 @@ export const main = () => {
     if (e.code === 'KeyS') { captureSnapshot(); }
   });
 
-  // --- Render loop ---
+  chotto.fitWindow();
+
+  const tunnelBindGroup = device.createBindGroup({
+    layout: tunnelPipeline.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: ubo.buffer } }],
+  });
+
   const render = () => {
     const time = timer.getElapsedTime();
 
-    // Smooth boost with ease-in-out
     if (boostTarget > 0.0) {
       boostProgress = Math.min(1.0, boostProgress + boostRampUp);
     } else {
@@ -241,33 +116,35 @@ export const main = () => {
     }
     boostValue = boostProgress * boostProgress * (3.0 - 2.0 * boostProgress);
 
-    // Accumulate boost time from delta
     const dt = time - lastTime;
     lastTime = time;
-    boostTime += dt * boostValue * 1.0;
+    boostTime += dt * boostValue;
 
-    shader.use();
-    shader.setUniform('iTime', time);
-    shader.setUniform('iResolution', [canvas.width, canvas.height]);
-    shader.setUniform('iSpeed', params.speed);
-    shader.setUniform('iBoostTime', boostTime);
-    shader.setUniform('iFreqA', params.freqA);
-    shader.setUniform('iFreqB', params.freqB);
-    shader.setUniform('iAmpA', params.ampA);
-    shader.setUniform('iAmpB', params.ampB);
-    shader.setUniform('iTunnelRadius', params.tunnelRadius);
-    shader.setUniform('iStyle', params.style);
-    shader.setUniform('iMaxSteps', MAX_STEPS);
-    shader.setUniform('iStepScale', STEP_SCALE);
-    shader.setUniform('iMaxDist', MAX_DIST);
-    shader.draw();
+    uboF32[0] = canvas.width;
+    uboF32[1] = canvas.height;
+    uboF32[2] = time;
+    uboF32[3] = params.speed;
+    uboF32[4] = boostTime;
+    uboF32[5] = params.freqA;
+    uboF32[6] = params.freqB;
+    uboF32[7] = params.ampA;
+    uboF32[8] = params.ampB;
+    uboF32[9] = params.tunnelRadius;
+    uboI32[10] = params.style | 0;
+    uboI32[11] = MAX_STEPS;
+    uboF32[12] = STEP_SCALE;
+    uboF32[13] = MAX_DIST;
+    ubo.write(uboF32);
+
+    chotto.frame(() => {
+      chotto.pass((p) => {
+        p.setPipeline(tunnelPipeline);
+        p.setBindGroup(0, tunnelBindGroup);
+        p.draw(3);
+      });
+    });
 
     if (isPlaying) frameCount++;
-
-    if (timeDisplay) {
-      timeDisplay.textContent = `${time.toFixed(2)}s | f:${frameCount}`;
-    }
-
     requestAnimationFrame(render);
   };
 
