@@ -152,7 +152,7 @@ fn sdfMapFast(pos: vec3f) -> SDFResult {
   let cableInner = (u.tunnelRadius - 0.08) * 0.95 - 0.06;
   let dCableZone = cableInner - r;
   if (dCableZone > 0.01) {
-    result.dist = dCableZone;
+    result.dist = tunnel;
     result.surface = 0;
     return result;
   }
