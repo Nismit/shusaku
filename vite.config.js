@@ -19,6 +19,7 @@ export default defineConfig({
         baitBall: resolve(__dirname, 'src/baitBall/index.html'),
         murmuration: resolve(__dirname, 'src/murmuration/index.html'),
         foldLab: resolve(__dirname, 'src/foldLab/index.html'),
+        mondrian: resolve(__dirname, 'src/mondrian/index.html'),
       },
     },
   },
