@@ -5,10 +5,17 @@ import { isMobile, isTablet } from '../libs/DeviceDetect.js';
 import GUI from '../libs/gui.js';
 
 import tunnelWGSL from './shaders/tunnel.wgsl?raw';
+import blitWGSL from './shaders/blit.wgsl?raw';
 
 const MAX_STEPS = isMobile() ? 40 : isTablet() ? 72 : 96;
 const STEP_SCALE = isMobile() ? 0.9 : 0.8;
 const MAX_DIST = isMobile() ? 80.0 : 120.0;
+
+// The raymarch cost scales with pixel count (O(steps * pixels)), so cutting
+// step count alone still leaves phones shading every physical pixel at up to
+// 2x DPR. Rendering the raymarch at reduced resolution and upscaling to the
+// canvas cuts that pixel count directly, which is the far bigger lever.
+const RENDER_SCALE = isMobile() ? 0.6 : isTablet() ? 0.85 : 1.0;
 
 export const main = async () => {
   const canvas = document.createElement('canvas');
@@ -20,6 +27,32 @@ export const main = async () => {
   const { device } = chotto;
 
   const tunnelPipeline = chotto.pipeline({ fragment: tunnelWGSL });
+
+  const scaled = RENDER_SCALE < 1.0;
+  let sceneFBO = null;
+  let blitPipeline = null;
+  let blitBindGroup = null;
+
+  function sceneSize() {
+    return {
+      width: Math.max(1, Math.round(canvas.width * RENDER_SCALE)),
+      height: Math.max(1, Math.round(canvas.height * RENDER_SCALE)),
+    };
+  }
+
+  function rebuildBlitBindGroup() {
+    blitBindGroup = device.createBindGroup({
+      layout: blitPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: chotto.sampler },
+        { binding: 1, resource: sceneFBO.view },
+      ],
+    });
+  }
+
+  if (scaled) {
+    blitPipeline = chotto.pipeline({ fragment: blitWGSL });
+  }
 
   const UBO_SIZE = 64;
   const uboAB = new ArrayBuffer(UBO_SIZE);
@@ -99,7 +132,19 @@ export const main = async () => {
     if (e.code === 'KeyS') { captureSnapshot(); }
   });
 
-  chotto.fitWindow();
+  chotto.fitWindow(() => {
+    if (scaled) {
+      const { width, height } = sceneSize();
+      sceneFBO.resize(width, height);
+      rebuildBlitBindGroup();
+    }
+  });
+
+  if (scaled) {
+    const { width, height } = sceneSize();
+    sceneFBO = chotto.framebuffer(width, height);
+    rebuildBlitBindGroup();
+  }
 
   const tunnelBindGroup = device.createBindGroup({
     layout: tunnelPipeline.getBindGroupLayout(0),
@@ -120,8 +165,8 @@ export const main = async () => {
     lastTime = time;
     boostTime += dt * boostValue;
 
-    uboF32[0] = canvas.width;
-    uboF32[1] = canvas.height;
+    uboF32[0] = scaled ? sceneFBO.width : canvas.width;
+    uboF32[1] = scaled ? sceneFBO.height : canvas.height;
     uboF32[2] = time;
     uboF32[3] = params.speed;
     uboF32[4] = boostTime;
@@ -136,11 +181,19 @@ export const main = async () => {
     ubo.write(uboF32);
 
     chotto.frame(() => {
-      chotto.pass((p) => {
+      chotto.pass(scaled ? { target: sceneFBO } : {}, (p) => {
         p.setPipeline(tunnelPipeline);
         p.setBindGroup(0, tunnelBindGroup);
         p.draw(3);
       });
+
+      if (scaled) {
+        chotto.pass((p) => {
+          p.setPipeline(blitPipeline);
+          p.setBindGroup(0, blitBindGroup);
+          p.draw(3);
+        });
+      }
     });
 
     fpsGraph.update();
