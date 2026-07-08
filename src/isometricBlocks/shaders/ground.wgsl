@@ -62,7 +62,7 @@ fn pcfShadow(coord: vec3f, bias: f32) -> f32 {
   let bias = 0.003;
   let shadow = pcfShadow(v.shadowCoord, bias);
 
-  let groundColor = vec3f(0.82, 0.80, 0.76);
+  let groundColor = vec3f(0.72, 0.70, 0.66);
   let shadowStrength = 0.4;
   let col = groundColor * (1.0 - shadowStrength * (1.0 - shadow));
 

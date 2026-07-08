@@ -7,7 +7,7 @@ import borderWGSL from './shaders/border.wgsl?raw';
 import screenWGSL from './shaders/screen.wgsl?raw';
 
 const GRID_SIZES = [6, 9, 12];
-const HOLD_DURATION = 1.8;
+const HOLD_DURATION = 3.8;
 const RISE_DURATION = 0.5;
 const COLLAPSE_DURATION = 0.5;
 const MAX_CUBES = 288;
@@ -76,18 +76,38 @@ function mat4Mul(a, b) {
   return out;
 }
 
-const CAM_RADIUS = Math.sqrt(10 * 10 + 10 * 10);
-const CAM_Y = 14;
-const CAM_BASE_ANGLE = Math.atan2(10, 10);
+const CAM_EYE = [10, 14, 10];
 
-function buildCameraVP(extent, aspect, rotation) {
+function buildCameraVP(extent, aspect) {
   const half = extent / 2 + CAMERA_PADDING;
-  const angle = CAM_BASE_ANGLE + rotation;
-  const eye = [CAM_RADIUS * Math.sin(angle), CAM_Y, CAM_RADIUS * Math.cos(angle)];
-  const view = lookAt(eye, [0, 0, 0], [0, 1, 0]);
+  const view = lookAt(CAM_EYE, [0, 0, 0], [0, 1, 0]);
   const hx = half * aspect;
   const proj = ortho(-hx, hx, -half, half, 0.1, 40);
   return mat4Mul(proj, view);
+}
+
+function screenToGround(offsetX, offsetY, clientW, clientH, extent, aspect) {
+  const nx = (offsetX / clientW) * 2 - 1;
+  const ny = 1 - (offsetY / clientH) * 2;
+  const half = extent / 2 + CAMERA_PADDING;
+  const hx = half * aspect;
+
+  const eLen = Math.sqrt(CAM_EYE[0] ** 2 + CAM_EYE[1] ** 2 + CAM_EYE[2] ** 2);
+  const z = [CAM_EYE[0] / eLen, CAM_EYE[1] / eLen, CAM_EYE[2] / eLen];
+  const xLen = Math.sqrt(z[2] ** 2 + z[0] ** 2);
+  const x = [z[2] / xLen, 0, -z[0] / xLen];
+  const y = [
+    z[1] * x[2] - z[2] * x[1],
+    z[2] * x[0] - z[0] * x[2],
+    z[0] * x[1] - z[1] * x[0],
+  ];
+
+  const ox = CAM_EYE[0] + x[0] * nx * hx + y[0] * ny * half;
+  const oy = CAM_EYE[1] + y[1] * ny * half;
+  const oz = CAM_EYE[2] + x[2] * nx * hx + y[2] * ny * half;
+  const t = oy / z[1];
+
+  return { x: ox - z[0] * t, z: oz - z[2] * t };
 }
 
 function buildLightVP(extent) {
@@ -141,7 +161,7 @@ function createCube() {
   };
 }
 
-const STAGGER_SPREAD = 0.35;
+const STAGGER_SPREAD = 0.6;
 
 function generateGrid(size) {
   const cubes = [];
@@ -158,12 +178,13 @@ function generateGrid(size) {
       const dx = col - half;
       const dz = row - half;
       const dist = Math.sqrt(dx * dx + dz * dz);
+      const normDist = dist / maxDist;
       cubes.push({
         x: dx,
         z: dz,
         height: MIN_HEIGHT + Math.random() * (MAX_HEIGHT - MIN_HEIGHT),
         color,
-        delay: (dist / maxDist) * STAGGER_SPREAD,
+        delay: normDist * normDist * STAGGER_SPREAD,
       });
     }
   }
@@ -407,18 +428,19 @@ export const main = async () => {
   let phaseTimer = 0;
   let activeCount = grid.length;
 
-  const SPIN_DURATION = 1.8;
-  let spinFrom = 0;
-  let spinRotation = 0;
-  let spinTimer = 0;
-  let spinning = false;
+  const RIPPLE_SPEED = 5.0;
+  const RIPPLE_BOUNCE_DUR = 0.5;
+  const RIPPLE_AMPLITUDE = 1.2;
+  const RIPPLE_MAX_RADIUS = FIXED_GRID_SIZE;
+  const ripples = [];
 
-  canvas.addEventListener('click', () => {
-    if (!spinning) {
-      spinFrom = spinRotation;
-      spinTimer = 0;
-      spinning = true;
-    }
+  canvas.addEventListener('click', (e) => {
+    const aspect = canvas.width / canvas.height;
+    const pos = screenToGround(
+      e.offsetX, e.offsetY, canvas.clientWidth, canvas.clientHeight,
+      FIXED_GRID_SIZE, aspect,
+    );
+    ripples.push({ x: pos.x, z: pos.z, time: 0 });
   });
 
   const timer = new Timer();
@@ -447,6 +469,10 @@ export const main = async () => {
 
     const cellScale = FIXED_GRID_SIZE / GRID_SIZES[gridIndex];
 
+    for (const r of ripples) r.time += dt;
+    const expiry = RIPPLE_MAX_RADIUS / RIPPLE_SPEED + RIPPLE_BOUNCE_DUR;
+    while (ripples.length > 0 && ripples[0].time > expiry) ripples.shift();
+
     let idx = 0;
     for (const c of grid) {
       let heightMul;
@@ -460,27 +486,31 @@ export const main = async () => {
         const t = Math.max(0, Math.min((phaseTimer - reverseDelay) / COLLAPSE_DURATION, 1));
         heightMul = 1 - easeInOutCubic(t);
       }
+
+      let rippleBoost = 0;
+      for (const r of ripples) {
+        const dx = c.x * cellScale - r.x;
+        const dz = c.z * cellScale - r.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        const localTime = r.time - dist / RIPPLE_SPEED;
+        if (localTime > 0 && localTime < RIPPLE_BOUNCE_DUR) {
+          const bt = localTime / RIPPLE_BOUNCE_DUR;
+          const decay = Math.max(0, 1 - dist / RIPPLE_MAX_RADIUS);
+          rippleBoost += RIPPLE_AMPLITUDE * Math.sin(bt * Math.PI) * decay;
+        }
+      }
+
       instanceData[idx++] = c.x;
       instanceData[idx++] = c.z;
-      instanceData[idx++] = c.height * heightMul;
+      instanceData[idx++] = c.height * heightMul + rippleBoost;
       instanceData[idx++] = c.color;
       instanceData[idx++] = cellScale;
     }
     activeCount = grid.length;
     instanceBuffer.write(instanceData);
 
-    if (spinning) {
-      spinTimer += dt;
-      const t = Math.min(spinTimer / SPIN_DURATION, 1);
-      spinRotation = spinFrom + easeOutBack(t) * Math.PI * 2;
-      if (t >= 1) {
-        spinRotation = spinFrom + Math.PI * 2;
-        spinning = false;
-      }
-    }
-
     const aspect = canvas.width / canvas.height;
-    const cameraVP = buildCameraVP(FIXED_GRID_SIZE, aspect, spinRotation);
+    const cameraVP = buildCameraVP(FIXED_GRID_SIZE, aspect);
     const lightVP = buildLightVP(FIXED_GRID_SIZE + 4);
 
     const lLen = Math.sqrt(LIGHT_DIR[0] ** 2 + LIGHT_DIR[1] ** 2 + LIGHT_DIR[2] ** 2);
@@ -519,7 +549,7 @@ export const main = async () => {
         p.drawIndexed(border.indices.length);
       });
 
-      gpu.pass({ target: renderFBO, clear: [0.82, 0.80, 0.76, 1] }, (p) => {
+      gpu.pass({ target: renderFBO, clear: [0.72, 0.70, 0.66, 1] }, (p) => {
         p.setPipeline(groundPipe);
         p.setBindGroup(0, groundBG);
         p.setVertexBuffer(0, groundBuffer.buffer);
