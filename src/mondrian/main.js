@@ -9,7 +9,6 @@ const GRID_SIZES = [6, 9, 12];
 const HOLD_DURATION = 1.8;
 const RISE_DURATION = 0.5;
 const COLLAPSE_DURATION = 0.5;
-const SCALE_DURATION = 1.0;
 const MAX_CUBES = 288;
 const SHADOW_MAP_SIZE = 1024;
 const RENDER_FORMAT = 'rgba16float';
@@ -22,10 +21,6 @@ const LIGHT_DIR = [1, 2, 1];
 
 function easeInOutCubic(t) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-}
-
-function lerp(a, b, t) {
-  return a + (b - a) * t;
 }
 
 function lookAt(eye, center, up) {
@@ -280,7 +275,6 @@ export const main = async () => {
 
   let gridIndex = 0;
   let grid = generateGrid(GRID_SIZES[gridIndex]);
-  let prevCellScale = FIXED_GRID_SIZE / GRID_SIZES[gridIndex];
   let phase = 'rise';
   let phaseTimer = 0;
   let activeCount = grid.length;
@@ -303,31 +297,19 @@ export const main = async () => {
       phase = 'collapse';
       phaseTimer = 0;
     } else if (phase === 'collapse' && phaseTimer >= COLLAPSE_DURATION) {
-      prevCellScale = FIXED_GRID_SIZE / GRID_SIZES[gridIndex];
       gridIndex = (gridIndex + 1) % GRID_SIZES.length;
       grid = generateGrid(GRID_SIZES[gridIndex]);
-      phase = 'scale';
-      phaseTimer = 0;
-    } else if (phase === 'scale' && phaseTimer >= SCALE_DURATION) {
-      prevCellScale = FIXED_GRID_SIZE / GRID_SIZES[gridIndex];
       phase = 'rise';
       phaseTimer = 0;
     }
 
-    const targetCellScale = FIXED_GRID_SIZE / GRID_SIZES[gridIndex];
-    let cellScale, heightMul;
-    if (phase === 'scale') {
-      const t = easeInOutCubic(Math.min(phaseTimer / SCALE_DURATION, 1));
-      cellScale = lerp(prevCellScale, targetCellScale, t);
-      heightMul = 0;
-    } else if (phase === 'rise') {
-      cellScale = targetCellScale;
+    const cellScale = FIXED_GRID_SIZE / GRID_SIZES[gridIndex];
+    let heightMul;
+    if (phase === 'rise') {
       heightMul = easeInOutCubic(Math.min(phaseTimer / RISE_DURATION, 1));
     } else if (phase === 'hold') {
-      cellScale = targetCellScale;
       heightMul = 1;
     } else {
-      cellScale = targetCellScale;
       heightMul = 1 - easeInOutCubic(Math.min(phaseTimer / COLLAPSE_DURATION, 1));
     }
 
