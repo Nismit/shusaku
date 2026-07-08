@@ -67,7 +67,7 @@ export const main = async () => {
     exposure: 1.2,
     bgTop: '#0a0e1a',
     bgBottom: '#06080f',
-    orbitSpeed: 1.0,
+    orbitSpeed: 1.4,
     ballRadius: 0.35,
     bloomEnabled: true,
     bloomThreshold: 0.5,
@@ -164,9 +164,9 @@ export const main = async () => {
   // --- Ball configs ---
   // 3 groups of 4: balls within a group share similar Lissajous frequencies
   // so they periodically converge (merge) and diverge (separate).
-  // The last ball in each group is a "wanderer" — its amplitude slowly swells
-  // so it drifts far from the cluster, then shrinks back to rejoin.
-  const WANDERER_LOCALS = new Set([3]);
+  // The last two balls in each group are "wanderers" — their amplitude slowly
+  // swells so they drift far from the cluster, then shrink back to rejoin.
+  const WANDERER_LOCALS = new Set([2, 3]);
   const ballConfigs = Array.from({ length: NUM_BALLS }, (_, i) => {
     const group = Math.floor(i / 4);
     const local = i % 4;
@@ -190,9 +190,9 @@ export const main = async () => {
       radiusFactor: 0.9 + Math.sin(i * 1.7) * 0.2,
       pulseSpeed: 0.25 + i * 0.03,
       pulsePhase: i * 1.1,
-      wanderSpeed: isWanderer ? 0.06 + group * 0.02 : 0,
+      wanderSpeed: isWanderer ? 0.06 + group * 0.02 + local * 0.015 : 0,
       wanderAmount: isWanderer ? 1.2 + group * 0.2 : 0,
-      wanderPhase: group * 2.5,
+      wanderPhase: group * 2.5 + local * 1.7,
     };
   });
 
