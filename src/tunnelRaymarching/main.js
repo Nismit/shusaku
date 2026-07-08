@@ -7,15 +7,22 @@ import GUI from '../libs/gui.js';
 import tunnelWGSL from './shaders/tunnel.wgsl?raw';
 import blitWGSL from './shaders/blit.wgsl?raw';
 
-const MAX_STEPS = isMobile() ? 40 : isTablet() ? 72 : 96;
-const STEP_SCALE = isMobile() ? 0.9 : 0.8;
-const MAX_DIST = isMobile() ? 80.0 : 120.0;
-
 // The raymarch cost scales with pixel count (O(steps * pixels)), so cutting
 // step count alone still leaves phones shading every physical pixel at up to
 // 2x DPR. Rendering the raymarch at reduced resolution and upscaling to the
 // canvas cuts that pixel count directly, which is the far bigger lever.
 const RENDER_SCALE = isMobile() ? 0.6 : isTablet() ? 0.85 : 1.0;
+
+// Looking straight down the tunnel's central axis needs many march steps and
+// a long ray distance to ever curve into a wall - with a short MAX_DIST/step
+// budget those center rays exhaust their budget before converging and fall
+// into the "miss" (near-black) branch, showing up as a dark disc in the
+// middle of the screen. RENDER_SCALE above already cuts mobile's per-frame
+// cost to well under what the old 40-step/full-resolution budget cost, so
+// there's headroom to raise steps/distance back up without regressing perf.
+const MAX_STEPS = isMobile() ? 64 : isTablet() ? 72 : 96;
+const STEP_SCALE = isMobile() ? 0.85 : 0.8;
+const MAX_DIST = isMobile() ? 110.0 : 120.0;
 
 export const main = async () => {
   const canvas = document.createElement('canvas');
