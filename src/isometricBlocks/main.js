@@ -26,6 +26,12 @@ function easeInOutCubic(t) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
+function easeOutBack(t) {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
+
 function lookAt(eye, center, up) {
   const out = new Float32Array(16);
   let zx = eye[0] - center[0], zy = eye[1] - center[1], zz = eye[2] - center[2];
@@ -416,7 +422,7 @@ export const main = async () => {
     const cellScale = FIXED_GRID_SIZE / GRID_SIZES[gridIndex];
     let heightMul;
     if (phase === 'rise') {
-      heightMul = easeInOutCubic(Math.min(phaseTimer / RISE_DURATION, 1));
+      heightMul = easeOutBack(Math.min(phaseTimer / RISE_DURATION, 1));
     } else if (phase === 'hold') {
       heightMul = 1;
     } else {
@@ -451,7 +457,7 @@ export const main = async () => {
     sceneData[38] = elapsed;
     sceneData[39] = FIXED_GRID_SIZE / 2 + CAMERA_PADDING + 2;
     sceneData[40] = cellScale;
-    sceneData[41] = 1 - heightMul;
+    sceneData[41] = Math.max(0, 1 - heightMul);
     sceneUBO.write(sceneData);
 
     shadowData.set(lightVP, 0);
