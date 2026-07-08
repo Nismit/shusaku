@@ -78,10 +78,19 @@ function mat4Mul(a, b) {
 
 const CAM_EYE = [10, 14, 10];
 
-function buildCameraVP(extent, aspect) {
-  const half = extent / 2 + CAMERA_PADDING;
-  const view = lookAt(CAM_EYE, [0, 0, 0], [0, 1, 0]);
+// On portrait/narrow screens (aspect < 1), keep the horizontal half-width at
+// least as large as the square-aspect case and grow the vertical half instead,
+// so the camera effectively pulls back instead of clipping the grid's sides.
+function cameraHalfExtents(extent, aspect) {
+  const baseHalf = extent / 2 + CAMERA_PADDING;
+  const half = baseHalf / Math.min(aspect, 1);
   const hx = half * aspect;
+  return { half, hx };
+}
+
+function buildCameraVP(extent, aspect) {
+  const { half, hx } = cameraHalfExtents(extent, aspect);
+  const view = lookAt(CAM_EYE, [0, 0, 0], [0, 1, 0]);
   const proj = ortho(-hx, hx, -half, half, 0.1, 40);
   return mat4Mul(proj, view);
 }
@@ -89,8 +98,7 @@ function buildCameraVP(extent, aspect) {
 function screenToGround(offsetX, offsetY, clientW, clientH, extent, aspect) {
   const nx = (offsetX / clientW) * 2 - 1;
   const ny = 1 - (offsetY / clientH) * 2;
-  const half = extent / 2 + CAMERA_PADDING;
-  const hx = half * aspect;
+  const { half, hx } = cameraHalfExtents(extent, aspect);
 
   const eLen = Math.sqrt(CAM_EYE[0] ** 2 + CAM_EYE[1] ** 2 + CAM_EYE[2] ** 2);
   const z = [CAM_EYE[0] / eLen, CAM_EYE[1] / eLen, CAM_EYE[2] / eLen];
