@@ -69,7 +69,8 @@ struct VOut {
   );
 
   let ci = u32(inst.colorIndex);
-  let color = PALETTE[min(ci, 3u)];
+  let colorMix = 1.0 - smoothstep(0.0, 0.2, scaleY);
+  let color = mix(PALETTE[min(ci, 3u)], PALETTE[0], colorMix);
 
   var out: VOut;
   out.position = u.viewProj * vec4f(worldPos, 1.0);
@@ -120,8 +121,7 @@ fn pcfShadow(coord: vec3f, bias: f32) -> f32 {
 
   let shadowStrength = 0.55;
   let lit = u.ambient + diffuse * (1.0 - shadowStrength + shadowStrength * shadow);
-  let baseColor = mix(v.color, PALETTE[0], u.colorMix);
-  let col = baseColor * lit * ao * edgeFactor;
+  let col = v.color * lit * ao * edgeFactor;
 
   return vec4f(col, 1.0);
 }

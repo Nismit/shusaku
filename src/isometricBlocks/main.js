@@ -141,9 +141,12 @@ function createCube() {
   };
 }
 
+const STAGGER_SPREAD = 0.35;
+
 function generateGrid(size) {
   const cubes = [];
   const half = (size - 1) / 2;
+  const maxDist = Math.sqrt(half * half + half * half) || 1;
   for (let row = 0; row < size; row++) {
     for (let col = 0; col < size; col++) {
       const r = Math.random();
@@ -152,11 +155,15 @@ function generateGrid(size) {
       else if (r < 0.67) color = 1;
       else if (r < 0.84) color = 2;
       else color = 3;
+      const dx = col - half;
+      const dz = row - half;
+      const dist = Math.sqrt(dx * dx + dz * dz);
       cubes.push({
-        x: col - half,
-        z: row - half,
+        x: dx,
+        z: dz,
         height: MIN_HEIGHT + Math.random() * (MAX_HEIGHT - MIN_HEIGHT),
         color,
+        delay: (dist / maxDist) * STAGGER_SPREAD,
       });
     }
   }
@@ -425,13 +432,13 @@ export const main = async () => {
 
     phaseTimer += dt;
 
-    if (phase === 'rise' && phaseTimer >= RISE_DURATION) {
+    if (phase === 'rise' && phaseTimer >= RISE_DURATION + STAGGER_SPREAD) {
       phase = 'hold';
       phaseTimer = 0;
     } else if (phase === 'hold' && phaseTimer >= HOLD_DURATION) {
       phase = 'collapse';
       phaseTimer = 0;
-    } else if (phase === 'collapse' && phaseTimer >= COLLAPSE_DURATION) {
+    } else if (phase === 'collapse' && phaseTimer >= COLLAPSE_DURATION + STAGGER_SPREAD) {
       gridIndex = (gridIndex + 1) % GRID_SIZES.length;
       grid = generateGrid(GRID_SIZES[gridIndex]);
       phase = 'rise';
@@ -439,17 +446,20 @@ export const main = async () => {
     }
 
     const cellScale = FIXED_GRID_SIZE / GRID_SIZES[gridIndex];
-    let heightMul;
-    if (phase === 'rise') {
-      heightMul = easeOutBack(Math.min(phaseTimer / RISE_DURATION, 1));
-    } else if (phase === 'hold') {
-      heightMul = 1;
-    } else {
-      heightMul = 1 - easeInOutCubic(Math.min(phaseTimer / COLLAPSE_DURATION, 1));
-    }
 
     let idx = 0;
     for (const c of grid) {
+      let heightMul;
+      if (phase === 'rise') {
+        const t = Math.max(0, Math.min((phaseTimer - c.delay) / RISE_DURATION, 1));
+        heightMul = easeOutBack(t);
+      } else if (phase === 'hold') {
+        heightMul = 1;
+      } else {
+        const reverseDelay = STAGGER_SPREAD - c.delay;
+        const t = Math.max(0, Math.min((phaseTimer - reverseDelay) / COLLAPSE_DURATION, 1));
+        heightMul = 1 - easeInOutCubic(t);
+      }
       instanceData[idx++] = c.x;
       instanceData[idx++] = c.z;
       instanceData[idx++] = c.height * heightMul;
@@ -486,12 +496,12 @@ export const main = async () => {
     sceneData[38] = elapsed;
     sceneData[39] = FIXED_GRID_SIZE / 2 + CAMERA_PADDING + 2;
     sceneData[40] = cellScale;
-    sceneData[41] = Math.max(0, 1 - heightMul);
+    sceneData[41] = 0;
     sceneUBO.write(sceneData);
 
     shadowData.set(lightVP, 0);
     shadowData[16] = cellScale;
-    shadowData[17] = 1 - heightMul;
+    shadowData[17] = 0;
     shadowUBO.write(shadowData);
 
     gpu.frame(() => {
