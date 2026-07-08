@@ -10,6 +10,8 @@ const GRID_SIZES = [6, 9, 12];
 const HOLD_DURATION = 3.8;
 const RISE_DURATION = 0.5;
 const COLLAPSE_DURATION = 0.5;
+const CLICK_COLLAPSE_DURATION = 0.3;
+const CLICK_IDLE_TIMEOUT = 3.0;
 const MAX_CUBES = 288;
 const SHADOW_MAP_SIZE = 1024;
 const RENDER_FORMAT = 'rgba16float';
@@ -438,11 +440,25 @@ export const main = async () => {
   let phaseTimer = 0;
   let activeCount = grid.length;
 
-  const RIPPLE_SPEED = 5.0;
-  const RIPPLE_BOUNCE_DUR = 0.5;
-  const RIPPLE_AMPLITUDE = 1.2;
-  const RIPPLE_MAX_RADIUS = FIXED_GRID_SIZE;
-  const ripples = [];
+  function getCurrentHeightMul(c) {
+    if (phase === 'rise') {
+      const t = Math.max(0, Math.min((phaseTimer - c.delay) / RISE_DURATION, 1));
+      return easeOutBack(t);
+    } else if (phase === 'hold' || phase === 'click-hold') {
+      return 1;
+    } else if (phase === 'collapse') {
+      const reverseDelay = STAGGER_SPREAD - c.delay;
+      const t = Math.max(0, Math.min((phaseTimer - reverseDelay) / COLLAPSE_DURATION, 1));
+      return 1 - easeInBack(t);
+    } else if (phase === 'click-collapse') {
+      const t = Math.min(phaseTimer / CLICK_COLLAPSE_DURATION, 1);
+      return c.snapshotMul * (1 - easeInBack(t));
+    } else if (phase === 'click-rise') {
+      const t = Math.max(0, Math.min((phaseTimer - c.clickDelay) / RISE_DURATION, 1));
+      return easeOutBack(t);
+    }
+    return 1;
+  }
 
   canvas.addEventListener('click', (e) => {
     const aspect = canvas.width / canvas.height;
@@ -450,7 +466,24 @@ export const main = async () => {
       e.offsetX, e.offsetY, canvas.clientWidth, canvas.clientHeight,
       FIXED_GRID_SIZE, aspect,
     );
-    ripples.push({ x: pos.x, z: pos.z, time: 0 });
+
+    const currentCellScale = FIXED_GRID_SIZE / GRID_SIZES[gridIndex];
+    let maxDist = 0;
+    for (const c of grid) {
+      c.snapshotMul = getCurrentHeightMul(c);
+      const dx = c.x * currentCellScale - pos.x;
+      const dz = c.z * currentCellScale - pos.z;
+      c.clickDist = Math.sqrt(dx * dx + dz * dz);
+      if (c.clickDist > maxDist) maxDist = c.clickDist;
+    }
+    maxDist = maxDist || 1;
+    for (const c of grid) {
+      const normDist = c.clickDist / maxDist;
+      c.clickDelay = normDist * normDist * STAGGER_SPREAD;
+    }
+
+    phase = 'click-collapse';
+    phaseTimer = 0;
   });
 
   const timer = new Timer();
@@ -475,44 +508,26 @@ export const main = async () => {
       grid = generateGrid(GRID_SIZES[gridIndex]);
       phase = 'rise';
       phaseTimer = 0;
+    } else if (phase === 'click-collapse' && phaseTimer >= CLICK_COLLAPSE_DURATION) {
+      phase = 'click-rise';
+      phaseTimer = 0;
+    } else if (phase === 'click-rise' && phaseTimer >= RISE_DURATION + STAGGER_SPREAD) {
+      phase = 'click-hold';
+      phaseTimer = 0;
+    } else if (phase === 'click-hold' && phaseTimer >= CLICK_IDLE_TIMEOUT) {
+      phase = 'collapse';
+      phaseTimer = 0;
     }
 
     const cellScale = FIXED_GRID_SIZE / GRID_SIZES[gridIndex];
 
-    for (const r of ripples) r.time += dt;
-    const expiry = RIPPLE_MAX_RADIUS / RIPPLE_SPEED + RIPPLE_BOUNCE_DUR;
-    while (ripples.length > 0 && ripples[0].time > expiry) ripples.shift();
-
     let idx = 0;
     for (const c of grid) {
-      let heightMul;
-      if (phase === 'rise') {
-        const t = Math.max(0, Math.min((phaseTimer - c.delay) / RISE_DURATION, 1));
-        heightMul = easeOutBack(t);
-      } else if (phase === 'hold') {
-        heightMul = 1;
-      } else {
-        const reverseDelay = STAGGER_SPREAD - c.delay;
-        const t = Math.max(0, Math.min((phaseTimer - reverseDelay) / COLLAPSE_DURATION, 1));
-        heightMul = 1 - easeInBack(t);
-      }
-
-      let rippleBoost = 0;
-      for (const r of ripples) {
-        const dx = c.x * cellScale - r.x;
-        const dz = c.z * cellScale - r.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-        const localTime = r.time - dist / RIPPLE_SPEED;
-        if (localTime > 0 && localTime < RIPPLE_BOUNCE_DUR) {
-          const bt = localTime / RIPPLE_BOUNCE_DUR;
-          const decay = Math.max(0, 1 - dist / RIPPLE_MAX_RADIUS);
-          rippleBoost += RIPPLE_AMPLITUDE * Math.sin(bt * Math.PI) * decay;
-        }
-      }
+      const heightMul = getCurrentHeightMul(c);
 
       instanceData[idx++] = c.x;
       instanceData[idx++] = c.z;
-      instanceData[idx++] = c.height * heightMul + rippleBoost;
+      instanceData[idx++] = c.height * heightMul;
       instanceData[idx++] = c.color;
       instanceData[idx++] = cellScale;
     }
