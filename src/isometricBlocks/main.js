@@ -22,8 +22,10 @@ const LIGHT_DIR = [1, 2, 1];
 const BORDER_THICKNESS = 0.1;
 const BORDER_HEIGHT = 0.15;
 
-function easeInOutCubic(t) {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+function easeInBack(t) {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return c3 * t * t * t - c1 * t * t;
 }
 
 function easeOutBack(t) {
@@ -492,7 +494,7 @@ export const main = async () => {
       } else {
         const reverseDelay = STAGGER_SPREAD - c.delay;
         const t = Math.max(0, Math.min((phaseTimer - reverseDelay) / COLLAPSE_DURATION, 1));
-        heightMul = 1 - easeInOutCubic(t);
+        heightMul = 1 - easeInBack(t);
       }
 
       let rippleBoost = 0;
