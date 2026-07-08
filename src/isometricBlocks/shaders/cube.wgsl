@@ -38,11 +38,13 @@ struct VOut {
   @location(2) shadowCoord: vec3f,
   @location(3) color: vec3f,
   @location(4) ao: f32,
+  @location(5) faceUV: vec2f,
 };
 
 @vertex fn vs(
   @location(0) pos: vec3f,
   @location(1) norm: vec3f,
+  @location(2) uv: vec2f,
   @builtin(instance_index) iid: u32,
 ) -> VOut {
   let inst = instances[iid];
@@ -76,6 +78,7 @@ struct VOut {
   out.shadowCoord = shadowCoord;
   out.color = color;
   out.ao = pos.y;
+  out.faceUV = uv;
   return out;
 }
 
@@ -111,10 +114,14 @@ fn pcfShadow(coord: vec3f, bias: f32) -> f32 {
 
   let ao = mix(0.55, 1.0, smoothstep(0.0, 0.3, v.ao));
 
+  let edgeDist = min(min(v.faceUV.x, 1.0 - v.faceUV.x), min(v.faceUV.y, 1.0 - v.faceUV.y));
+  let edgeLine = smoothstep(0.0, 0.03, edgeDist);
+  let edgeFactor = mix(0.88, 1.0, edgeLine);
+
   let shadowStrength = 0.55;
   let lit = u.ambient + diffuse * (1.0 - shadowStrength + shadowStrength * shadow);
   let baseColor = mix(v.color, PALETTE[0], u.colorMix);
-  let col = baseColor * lit * ao;
+  let col = baseColor * lit * ao * edgeFactor;
 
   return vec4f(col, 1.0);
 }

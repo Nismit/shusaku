@@ -94,6 +94,7 @@ function buildLightVP(extent) {
 function createCube() {
   const positions = [];
   const normals = [];
+  const uvs = [];
   const indices = [];
   const faces = [
     { dir: [ 0,  0,  1], up: [0, 1, 0] },
@@ -103,24 +104,28 @@ function createCube() {
     { dir: [ 0,  1,  0], up: [0, 0,-1] },
     { dir: [ 0, -1,  0], up: [0, 0, 1] },
   ];
+  const cornerUVs = [[0, 0], [1, 0], [1, 1], [0, 1]];
   for (const face of faces) {
     const [dx, dy, dz] = face.dir;
     const [ux, uy, uz] = face.up;
     const rx = uy * dz - uz * dy, ry = uz * dx - ux * dz, rz = ux * dy - uy * dx;
     const baseIndex = positions.length / 3;
-    for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    for (let i = 0; i < 4; i++) {
+      const [su, sv] = [[-1, -1], [1, -1], [1, 1], [-1, 1]][i];
       positions.push(
         dx * 0.5 + rx * su * 0.5 + ux * sv * 0.5,
         dy * 0.5 + ry * su * 0.5 + uy * sv * 0.5 + 0.5,
         dz * 0.5 + rz * su * 0.5 + uz * sv * 0.5
       );
       normals.push(dx, dy, dz);
+      uvs.push(cornerUVs[i][0], cornerUVs[i][1]);
     }
     indices.push(baseIndex, baseIndex + 1, baseIndex + 2, baseIndex, baseIndex + 2, baseIndex + 3);
   }
   return {
     positions: new Float32Array(positions),
     normals: new Float32Array(normals),
+    uvs: new Float32Array(uvs),
     indices: new Uint16Array(indices),
   };
 }
@@ -219,14 +224,16 @@ export const main = async () => {
 
   const cube = createCube();
   const vertexCount = cube.positions.length / 3;
-  const interleaved = new Float32Array(vertexCount * 6);
+  const interleaved = new Float32Array(vertexCount * 8);
   for (let i = 0; i < vertexCount; i++) {
-    interleaved[i * 6 + 0] = cube.positions[i * 3 + 0];
-    interleaved[i * 6 + 1] = cube.positions[i * 3 + 1];
-    interleaved[i * 6 + 2] = cube.positions[i * 3 + 2];
-    interleaved[i * 6 + 3] = cube.normals[i * 3 + 0];
-    interleaved[i * 6 + 4] = cube.normals[i * 3 + 1];
-    interleaved[i * 6 + 5] = cube.normals[i * 3 + 2];
+    interleaved[i * 8 + 0] = cube.positions[i * 3 + 0];
+    interleaved[i * 8 + 1] = cube.positions[i * 3 + 1];
+    interleaved[i * 8 + 2] = cube.positions[i * 3 + 2];
+    interleaved[i * 8 + 3] = cube.normals[i * 3 + 0];
+    interleaved[i * 8 + 4] = cube.normals[i * 3 + 1];
+    interleaved[i * 8 + 5] = cube.normals[i * 3 + 2];
+    interleaved[i * 8 + 6] = cube.uvs[i * 2 + 0];
+    interleaved[i * 8 + 7] = cube.uvs[i * 2 + 1];
   }
   const vertexBuffer = gpu.buffer(interleaved, { vertex: true });
   const indexBuffer = gpu.buffer(cube.indices, { index: true });
@@ -251,6 +258,15 @@ export const main = async () => {
   const shadowUBO = gpu.buffer(shadowData, { uniform: true });
 
   const cubeVertexBuffers = [{
+    arrayStride: 32,
+    attributes: [
+      { shaderLocation: 0, offset: 0, format: 'float32x3' },
+      { shaderLocation: 1, offset: 12, format: 'float32x3' },
+      { shaderLocation: 2, offset: 24, format: 'float32x2' },
+    ],
+  }];
+
+  const borderVertexBuffers = [{
     arrayStride: 24,
     attributes: [
       { shaderLocation: 0, offset: 0, format: 'float32x3' },
@@ -297,7 +313,7 @@ export const main = async () => {
     vertex: borderWGSL,
     fragment: borderWGSL,
     format: RENDER_FORMAT,
-    vertexBuffers: cubeVertexBuffers,
+    vertexBuffers: borderVertexBuffers,
     depthTest: true,
     cullMode: 'back',
     samples: MSAA,
@@ -308,7 +324,7 @@ export const main = async () => {
     vertex: borderShadowWGSL,
     fragment: borderShadowWGSL,
     format: RENDER_FORMAT,
-    vertexBuffers: cubeVertexBuffers,
+    vertexBuffers: borderVertexBuffers,
     depthTest: true,
     cullMode: 'back',
   });

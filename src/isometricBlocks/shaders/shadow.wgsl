@@ -23,6 +23,7 @@ struct VOut {
 @vertex fn vs(
   @location(0) pos: vec3f,
   @location(1) norm: vec3f,
+  @location(2) uv: vec2f,
   @builtin(instance_index) iid: u32,
 ) -> VOut {
   let inst = instances[iid];
