@@ -76,9 +76,14 @@ function mat4Mul(a, b) {
   return out;
 }
 
-function buildCameraVP(extent, aspect) {
+const CAM_RADIUS = Math.sqrt(10 * 10 + 10 * 10);
+const CAM_Y = 14;
+const CAM_BASE_ANGLE = Math.atan2(10, 10);
+
+function buildCameraVP(extent, aspect, rotation) {
   const half = extent / 2 + CAMERA_PADDING;
-  const eye = [10, 14, 10];
+  const angle = CAM_BASE_ANGLE + rotation;
+  const eye = [CAM_RADIUS * Math.sin(angle), CAM_Y, CAM_RADIUS * Math.cos(angle)];
   const view = lookAt(eye, [0, 0, 0], [0, 1, 0]);
   const hx = half * aspect;
   const proj = ortho(-hx, hx, -half, half, 0.1, 40);
@@ -395,6 +400,20 @@ export const main = async () => {
   let phaseTimer = 0;
   let activeCount = grid.length;
 
+  const SPIN_DURATION = 1.8;
+  let spinFrom = 0;
+  let spinRotation = 0;
+  let spinTimer = 0;
+  let spinning = false;
+
+  canvas.addEventListener('click', () => {
+    if (!spinning) {
+      spinFrom = spinRotation;
+      spinTimer = 0;
+      spinning = true;
+    }
+  });
+
   const timer = new Timer();
   timer.start();
   let lastTime = 0;
@@ -440,8 +459,18 @@ export const main = async () => {
     activeCount = grid.length;
     instanceBuffer.write(instanceData);
 
+    if (spinning) {
+      spinTimer += dt;
+      const t = Math.min(spinTimer / SPIN_DURATION, 1);
+      spinRotation = spinFrom + easeOutBack(t) * Math.PI * 2;
+      if (t >= 1) {
+        spinRotation = spinFrom + Math.PI * 2;
+        spinning = false;
+      }
+    }
+
     const aspect = canvas.width / canvas.height;
-    const cameraVP = buildCameraVP(FIXED_GRID_SIZE, aspect);
+    const cameraVP = buildCameraVP(FIXED_GRID_SIZE, aspect, spinRotation);
     const lightVP = buildLightVP(FIXED_GRID_SIZE + 4);
 
     const lLen = Math.sqrt(LIGHT_DIR[0] ** 2 + LIGHT_DIR[1] ** 2 + LIGHT_DIR[2] ** 2);
