@@ -3,6 +3,7 @@ import { Timer } from '../libs/Timer.js';
 import cubeWGSL from './shaders/cube.wgsl?raw';
 import shadowWGSL from './shaders/shadow.wgsl?raw';
 import groundWGSL from './shaders/ground.wgsl?raw';
+import borderWGSL from './shaders/border.wgsl?raw';
 import screenWGSL from './shaders/screen.wgsl?raw';
 
 const GRID_SIZES = [6, 9, 12];
@@ -18,6 +19,8 @@ const MAX_HEIGHT = 3.0;
 const CAMERA_PADDING = 2.0;
 const FIXED_GRID_SIZE = 6;
 const LIGHT_DIR = [1, 2, 1];
+const BORDER_THICKNESS = 0.1;
+const BORDER_HEIGHT = 0.15;
 
 function easeInOutCubic(t) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -144,6 +147,57 @@ function generateGrid(size) {
   return cubes;
 }
 
+const borderShadowWGSL = `
+struct ShadowUniforms { lightViewProj: mat4x4f, gridScale: f32, colorMix: f32 };
+@group(0) @binding(0) var<uniform> u: ShadowUniforms;
+struct VOut { @builtin(position) position: vec4f, @location(0) depth: f32 };
+@vertex fn vs(@location(0) pos: vec3f, @location(1) norm: vec3f) -> VOut {
+  let clip = u.lightViewProj * vec4f(pos, 1.0);
+  var out: VOut; out.position = clip; out.depth = clip.z / clip.w; return out;
+}
+@fragment fn fs(v: VOut) -> @location(0) vec4f { return vec4f(v.depth, 0.0, 0.0, 1.0); }
+`;
+
+function createBorderGeometry() {
+  const half = FIXED_GRID_SIZE / 2;
+  const t = BORDER_THICKNESS;
+  const h = BORDER_HEIGHT;
+  const verts = [];
+  const indices = [];
+
+  function vert(px, py, pz, nx, ny, nz) {
+    verts.push(px, py, pz, nx, ny, nz);
+  }
+
+  function box(x0, z0, x1, z1) {
+    const base = verts.length / 6;
+    vert(x0,h,z1, 0,1,0); vert(x1,h,z1, 0,1,0);
+    vert(x1,h,z0, 0,1,0); vert(x0,h,z0, 0,1,0);
+    vert(x0,0,z1, 0,0,1); vert(x1,0,z1, 0,0,1);
+    vert(x1,h,z1, 0,0,1); vert(x0,h,z1, 0,0,1);
+    vert(x1,0,z0, 0,0,-1); vert(x0,0,z0, 0,0,-1);
+    vert(x0,h,z0, 0,0,-1); vert(x1,h,z0, 0,0,-1);
+    vert(x1,0,z1, 1,0,0); vert(x1,0,z0, 1,0,0);
+    vert(x1,h,z0, 1,0,0); vert(x1,h,z1, 1,0,0);
+    vert(x0,0,z0, -1,0,0); vert(x0,0,z1, -1,0,0);
+    vert(x0,h,z1, -1,0,0); vert(x0,h,z0, -1,0,0);
+    for (let f = 0; f < 5; f++) {
+      const i = base + f * 4;
+      indices.push(i, i + 1, i + 2, i, i + 2, i + 3);
+    }
+  }
+
+  box(-(half + t), half, half + t, half + t);
+  box(-(half + t), -(half + t), half + t, -half);
+  box(half, -half, half + t, half);
+  box(-(half + t), -half, -half, half);
+
+  return {
+    vertices: new Float32Array(verts),
+    indices: new Uint16Array(indices),
+  };
+}
+
 export const main = async () => {
   const canvas = document.createElement('canvas');
   canvas.style.width = '100vw';
@@ -182,6 +236,10 @@ export const main = async () => {
     -1, 0, -1,   1, 0, 1,  -1, 0, 1,
   ]);
   const groundBuffer = gpu.buffer(groundVerts, { vertex: true });
+
+  const border = createBorderGeometry();
+  const borderVertexBuffer = gpu.buffer(border.vertices, { vertex: true });
+  const borderIndexBuffer = gpu.buffer(border.indices, { index: true });
 
   const instanceData = new Float32Array(MAX_CUBES * 5);
   const instanceBuffer = gpu.buffer(instanceData, { storage: true });
@@ -235,6 +293,26 @@ export const main = async () => {
     depthCompare: 'less-equal',
   });
 
+  const borderPipe = gpu.pipeline({
+    vertex: borderWGSL,
+    fragment: borderWGSL,
+    format: RENDER_FORMAT,
+    vertexBuffers: cubeVertexBuffers,
+    depthTest: true,
+    cullMode: 'back',
+    samples: MSAA,
+    depthCompare: 'less-equal',
+  });
+
+  const borderShadowPipe = gpu.pipeline({
+    vertex: borderShadowWGSL,
+    fragment: borderShadowWGSL,
+    format: RENDER_FORMAT,
+    vertexBuffers: cubeVertexBuffers,
+    depthTest: true,
+    cullMode: 'back',
+  });
+
   const screenPipe = gpu.pipeline({ vertex: gpu.FULLSCREEN_VERT, fragment: screenWGSL });
 
   const shadowBG = gpu.device.createBindGroup({
@@ -268,6 +346,22 @@ export const main = async () => {
       { binding: 0, resource: { buffer: sceneUBO.buffer } },
       { binding: 1, resource: shadowSampler },
       { binding: 2, resource: shadowFBO.view },
+    ],
+  });
+
+  const borderBG = gpu.device.createBindGroup({
+    layout: borderPipe.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: sceneUBO.buffer } },
+      { binding: 1, resource: shadowSampler },
+      { binding: 2, resource: shadowFBO.view },
+    ],
+  });
+
+  const borderShadowBG = gpu.device.createBindGroup({
+    layout: borderShadowPipe.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: shadowUBO.buffer } },
     ],
   });
 
@@ -356,6 +450,12 @@ export const main = async () => {
         p.setVertexBuffer(0, vertexBuffer.buffer);
         p.setIndexBuffer(indexBuffer.buffer, 'uint16');
         p.drawIndexed(cube.indices.length, activeCount);
+
+        p.setPipeline(borderShadowPipe);
+        p.setBindGroup(0, borderShadowBG);
+        p.setVertexBuffer(0, borderVertexBuffer.buffer);
+        p.setIndexBuffer(borderIndexBuffer.buffer, 'uint16');
+        p.drawIndexed(border.indices.length);
       });
 
       gpu.pass({ target: renderFBO, clear: [0.82, 0.80, 0.76, 1] }, (p) => {
@@ -363,6 +463,12 @@ export const main = async () => {
         p.setBindGroup(0, groundBG);
         p.setVertexBuffer(0, groundBuffer.buffer);
         p.draw(6);
+
+        p.setPipeline(borderPipe);
+        p.setBindGroup(0, borderBG);
+        p.setVertexBuffer(0, borderVertexBuffer.buffer);
+        p.setIndexBuffer(borderIndexBuffer.buffer, 'uint16');
+        p.drawIndexed(border.indices.length);
 
         p.setPipeline(cubePipe);
         p.setBindGroup(0, cubeBG);
