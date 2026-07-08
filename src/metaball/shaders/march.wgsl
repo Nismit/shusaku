@@ -25,7 +25,7 @@ fn fieldIdx(x: u32, y: u32, z: u32) -> u32 {
 
 fn toWorld(x: u32, y: u32, z: u32) -> vec3f {
   let gs = f32(params.gridSize);
-  return vec3f(f32(x) / gs * 4.0 - 2.0, f32(y) / gs * 4.0 - 2.0, f32(z) / gs * 4.0 - 2.0);
+  return vec3f(f32(x) / gs * 6.0 - 3.0, f32(y) / gs * 6.0 - 3.0, f32(z) / gs * 6.0 - 3.0);
 }
 
 fn computeNormal(p: vec3f) -> vec3f {

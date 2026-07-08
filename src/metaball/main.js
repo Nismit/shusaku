@@ -191,7 +191,7 @@ export const main = async () => {
       pulseSpeed: 0.25 + i * 0.03,
       pulsePhase: i * 1.1,
       wanderSpeed: isWanderer ? 0.06 + group * 0.02 : 0,
-      wanderAmount: isWanderer ? 1.4 + group * 0.3 : 0,
+      wanderAmount: isWanderer ? 0.8 + group * 0.15 : 0,
       wanderPhase: group * 2.5,
     };
   });

@@ -27,9 +27,9 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 
   let gsf = f32(params.gridSize);
   let worldPos = vec3f(
-    f32(x) / gsf * 4.0 - 2.0,
-    f32(y) / gsf * 4.0 - 2.0,
-    f32(z) / gsf * 4.0 - 2.0,
+    f32(x) / gsf * 6.0 - 3.0,
+    f32(y) / gsf * 6.0 - 3.0,
+    f32(z) / gsf * 6.0 - 3.0,
   );
 
   var value = 0.0;
