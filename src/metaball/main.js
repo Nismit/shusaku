@@ -35,6 +35,22 @@ const hexToRGB = (hex) => [
   parseInt(hex.slice(5, 7), 16) / 255,
 ];
 
+const hsvToRGB = (h, s, v) => {
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+  switch (i % 6) {
+    case 0: return [v, t, p];
+    case 1: return [q, v, p];
+    case 2: return [p, v, t];
+    case 3: return [p, q, v];
+    case 4: return [t, p, v];
+    default: return [v, p, q];
+  }
+};
+
 export const main = async () => {
   const canvas = document.createElement('canvas');
   canvas.style.width = '100vw';
@@ -69,6 +85,7 @@ export const main = async () => {
     bgBottom: '#06080f',
     orbitSpeed: 2.8,
     ballRadius: 0.35,
+    colorBlend: 0.7,
     bloomEnabled: false,
     bloomThreshold: 0.5,
     bloomStrength: 0.6,
@@ -83,6 +100,7 @@ export const main = async () => {
   const vertexBuffer = chotto.buffer(MAX_VERTICES * 6 * 4, { storage: true });
   const indirectBuffer = chotto.buffer(16, { storage: true, usage: GPUBufferUsage.INDIRECT });
   const ballBuffer = chotto.buffer(MAX_BALLS * 16, { storage: true });
+  const ballColorBuffer = chotto.buffer(MAX_BALLS * 16, { storage: true });
 
   // --- Uniform buffers ---
   // field params: { gridSize: u32, numBalls: u32, _pad x2 } = 16 bytes
@@ -97,7 +115,7 @@ export const main = async () => {
   const marchU32 = new Uint32Array(marchAB);
   const marchF32 = new Float32Array(marchAB);
 
-  // camera: { resolution: vec2f, rotation: vec2f, zoom: f32, _pad x3, lightDir: vec3f, _pad } = 48 bytes
+  // camera: { resolution: vec2f, rotation: vec2f, zoom: f32, numBalls: f32, colorBlend: f32, _pad, lightDir: vec3f, _pad } = 48 bytes
   const cameraUBO = chotto.buffer(48, { uniform: true });
   const cameraData = new Float32Array(12);
 
@@ -197,6 +215,23 @@ export const main = async () => {
     };
   });
 
+  // Each group gets a distinct hue spread around the color wheel, with a small
+  // per-ball jitter so balls in the same group aren't perfectly identical.
+  // Colors blend smoothly where balls merge (see mesh.wgsl's weighted average).
+  const NUM_GROUPS = Math.ceil(NUM_BALLS / 4);
+  const ballColorData = new Float32Array(MAX_BALLS * 4);
+  for (let i = 0; i < NUM_BALLS; i++) {
+    const group = Math.floor(i / 4);
+    const local = i % 4;
+    const hue = (group / NUM_GROUPS + local * 0.02) % 1.0;
+    const [r, g, b] = hsvToRGB(hue, 0.55, 1.0);
+    const base = i * 4;
+    ballColorData[base] = r;
+    ballColorData[base + 1] = g;
+    ballColorData[base + 2] = b;
+  }
+  ballColorBuffer.write(ballColorData);
+
   const ballData = new Float32Array(MAX_BALLS * 4);
 
   const clearIndirectData = new Uint32Array([0, 1, 0, 0]);
@@ -283,6 +318,7 @@ export const main = async () => {
     cameraData[3] = params.rotationY;
     cameraData[4] = params.zoom;
     cameraData[5] = NUM_BALLS;
+    cameraData[6] = params.colorBlend;
     cameraData[8] = cosV * Math.sin(params.lightHorizontal);
     cameraData[9] = Math.sin(params.lightVertical);
     cameraData[10] = cosV * Math.cos(params.lightHorizontal);
@@ -330,6 +366,7 @@ export const main = async () => {
       const bgBindGroup = bg(bgPipeline.getBindGroupLayout(0), [buf(0, bgUBO)]);
       const meshBindGroup = bg(meshPipeline.getBindGroupLayout(0), [
         buf(0, vertexBuffer), buf(1, cameraUBO), buf(2, materialUBO), buf(3, ballBuffer),
+        buf(4, ballColorBuffer),
       ]);
 
       chotto.pass({ target: renderFBO, clear: { r: 0, g: 0, b: 0, a: 1 } }, (p) => {
@@ -435,6 +472,7 @@ export const main = async () => {
     lightFolder.add(params, 'toneMapping', 0.0, 1.0, 0.05).name('Tone Mapping');
 
     const colorFolder = gui.addFolder('Colors');
+    colorFolder.add(params, 'colorBlend', 0.0, 1.0, 0.01).name('Ball Color Blend');
     colorFolder.addColor(params, 'baseColor').name('Base Color');
     colorFolder.addColor(params, 'specColor').name('Specular');
     colorFolder.addColor(params, 'fresnelColor').name('Fresnel');

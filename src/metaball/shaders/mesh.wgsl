@@ -3,7 +3,7 @@ struct Camera {
   rotation: vec2f,
   zoom: f32,
   numBalls: f32,
-  _pad1: f32,
+  colorBlend: f32,
   _pad2: f32,
   lightDir: vec3f,
   _pad3: f32,
@@ -29,6 +29,7 @@ struct Ball {
 @group(0) @binding(1) var<uniform> camera: Camera;
 @group(0) @binding(2) var<uniform> material: Material;
 @group(0) @binding(3) var<storage, read> balls: array<Ball>;
+@group(0) @binding(4) var<storage, read> ballColors: array<vec4f>;
 
 struct VOut {
   @builtin(position) position: vec4f,
@@ -67,14 +68,21 @@ fn rotateX(v: vec3f, a: f32) -> vec3f {
 @fragment fn fs(in: VOut) -> @location(0) vec4f {
   let numBalls = u32(camera.numBalls);
   var grad = vec3f(0.0);
+  var colorAccum = vec3f(0.0);
+  var weightSum = 0.0;
   for (var i = 0u; i < numBalls; i++) {
     let ball = balls[i];
     let d = in.worldPos - ball.position;
     let dist2 = dot(d, d) + 0.0001;
     grad += -2.0 * ball.radius * ball.radius * d / (dist2 * dist2);
+    let w = ball.radius * ball.radius / dist2;
+    colorAccum += w * ballColors[i].rgb;
+    weightSum += w;
   }
   let gradLen = length(grad);
   let worldNormal = select(-grad / gradLen, vec3f(0.0, 1.0, 0.0), gradLen < 0.0001);
+  let blendedColor = select(material.baseColor, colorAccum / weightSum, weightSum > 0.0001);
+  let tintedBase = mix(material.baseColor, blendedColor, camera.colorBlend);
 
   let N = normalize(rotateX(rotateY(worldNormal, camera.rotation.y), camera.rotation.x));
   let V = normalize(-in.viewPos);
@@ -85,7 +93,7 @@ fn rotateX(v: vec3f, a: f32) -> vec3f {
   let NdotH = max(dot(N, H), 0.0);
   let NdotV = max(dot(N, V), 0.0);
 
-  let diffuse = material.baseColor * NdotL;
+  let diffuse = tintedBase * NdotL;
   let spec = material.specColor * pow(NdotH, material.shininess);
 
   let fresnel = pow(1.0 - NdotV, material.fresnelPower);
@@ -94,7 +102,7 @@ fn rotateX(v: vec3f, a: f32) -> vec3f {
   let ao = smoothstep(1.0, 8.0, gradLen) * 0.6 + 0.4;
 
   let hemiBlend = N.y * 0.5 + 0.5;
-  let hemiAmbient = material.baseColor * material.ambient * (0.6 + 0.4 * hemiBlend);
+  let hemiAmbient = tintedBase * material.ambient * (0.6 + 0.4 * hemiBlend);
 
   let color = (hemiAmbient + diffuse * material.lightColor) * ao
             + spec * material.lightColor
