@@ -12,7 +12,6 @@ struct UpdateParams {
 
 @group(0) @binding(0) var<storage, read> positionsIn: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read_write> positionsOut: array<vec4<f32>>;
-@group(0) @binding(2) var<storage, read> defaultPositions: array<vec4<f32>>;
 @group(0) @binding(3) var<uniform> params: UpdateParams;
 @group(0) @binding(4) var<storage, read_write> auxOut: array<vec4<f32>>;
 
@@ -30,6 +29,25 @@ fn random(seed: u32) -> f32 {
   return f32(hash(seed)) / f32(0xffffffffu);
 }
 
+fn spawnNearPositivePole(seed: u32) -> vec3<f32> {
+  var poleIdx = 0u;
+  for (var k = 0u; k < params.poleCount; k++) {
+    if (params.poles[k].w > 0.0) {
+      poleIdx = k;
+      if (random(seed + 20u) > 0.5) { break; }
+    }
+  }
+  let center = params.poles[poleIdx].xyz;
+  let theta = random(seed) * 6.28318;
+  let phi = acos(random(seed + 1u) * 2.0 - 1.0);
+  let rr = 0.025 + pow(random(seed + 2u), 0.5) * 0.045;
+  return center + vec3<f32>(
+    rr * sin(phi) * cos(theta),
+    rr * sin(phi) * sin(theta),
+    rr * cos(phi),
+  );
+}
+
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let idx = id.x;
@@ -43,9 +61,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   life += lifeStep * params.deltaFrames;
 
   if (life >= 1.0) {
-    let defPos = defaultPositions[idx];
-    pos = defPos.xyz;
-    life = fract(defPos.w * 21.4131 + params.time) * 0.02;
+    let seed = idx * 7u + u32(params.time * 500.0);
+    pos = spawnNearPositivePole(seed);
+    life = fract(f32(hash(idx + u32(params.time * 1000.0))) / f32(0xffffffffu)) * 0.02;
   }
 
   var B = vec3<f32>(0.0);
@@ -73,14 +91,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   }
   if (absorbed) {
     let seed = idx * 13u + u32(params.time * 1000.0);
-    let theta = random(seed) * 6.28318;
-    let phi = acos(random(seed + 1u) * 2.0 - 1.0);
-    let rr = pow(random(seed + 2u), 0.333) * params.spawnRadius;
-    pos = vec3<f32>(
-      rr * sin(phi) * cos(theta),
-      rr * sin(phi) * sin(theta),
-      rr * cos(phi),
-    );
+    pos = spawnNearPositivePole(seed);
     life = 0.0;
   }
 

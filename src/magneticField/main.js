@@ -12,6 +12,7 @@ import compositeWGSL from './shaders/composite.wgsl?raw';
 import thresholdWGSL from './shaders/threshold.wgsl?raw';
 import blurWGSL from './shaders/blur.wgsl?raw';
 import bloomComposeWGSL from './shaders/bloomcompose.wgsl?raw';
+import poleWGSL from './shaders/pole.wgsl?raw';
 
 const PARTICLE_COUNT = 256 * 256;
 const WORKGROUP_SIZE = 64;
@@ -109,10 +110,8 @@ export const main = async () => {
 
   // --- Poles ---
   const poles = [
-    { x: 0.32, y: 0.12, z: 0.0, charge: 1.0 },
-    { x: -0.32, y: -0.12, z: 0.0, charge: -1.0 },
-    { x: -0.1, y: 0.32, z: 0.15, charge: 1.0 },
-    { x: 0.1, y: -0.32, z: -0.15, charge: -1.0 },
+    { x: 0.3, y: 0.0, z: 0.0, charge: 1.0 },
+    { x: -0.3, y: 0.0, z: 0.0, charge: -1.0 },
   ];
 
   const params = {
@@ -139,6 +138,7 @@ export const main = async () => {
     particleColorC2: '#ff5030',
     bgTop: '#020412',
     bgBottom: '#080218',
+    poleGlowSize: 20,
     bloomEnabled: true,
     bloomThreshold: 0.4,
     bloomStrength: 0.8,
@@ -153,6 +153,8 @@ export const main = async () => {
   let positionsB = chotto.buffer(initData, { storage: true });
   const defaultPositions = chotto.buffer(initData, { storage: true });
   const auxBuffer = chotto.buffer(initData, { storage: true });
+  const poleDrawData = new Float32Array(4 * 4);
+  const poleBuffer = chotto.buffer(poleDrawData, { storage: true });
 
   // --- Uniform buffers ---
   // Init: { count: u32, seed: f32, spawnRadius: f32, _pad: f32 } = 16 bytes
@@ -183,6 +185,10 @@ export const main = async () => {
   const thresholdUBO = chotto.buffer(16, { uniform: true });
   const threshData = new Float32Array(4);
 
+  // Pole: 32 bytes
+  const poleUBO = chotto.buffer(32, { uniform: true });
+  const poleUData = new Float32Array(8);
+
   // Blur: 16 bytes per iteration
   const blurUBOs = Array.from({ length: MAX_BLOOM_ITERATIONS }, () => chotto.buffer(16, { uniform: true }));
   const blurData = new Float32Array(4);
@@ -205,6 +211,15 @@ export const main = async () => {
 
   const particlePipeline = chotto.pipeline({
     vertex: particleWGSL, fragment: particleWGSL,
+    format: RENDER_FORMAT, topology: 'triangle-strip',
+    blend: {
+      color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+      alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+    },
+  });
+
+  const polePipeline = chotto.pipeline({
+    vertex: poleWGSL, fragment: poleWGSL,
     format: RENDER_FORMAT, topology: 'triangle-strip',
     blend: {
       color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
@@ -337,8 +352,7 @@ export const main = async () => {
         p.setPipeline(updatePipeline);
         p.setBindGroup(0, bg(updatePipeline.getBindGroupLayout(0), [
           buf(0, positionsA), buf(1, positionsB),
-          buf(2, defaultPositions), buf(3, updateUBO),
-          buf(4, auxBuffer),
+          buf(3, updateUBO), buf(4, auxBuffer),
         ]));
         p.dispatchWorkgroups(workgroupCount);
       });
@@ -366,6 +380,22 @@ export const main = async () => {
         buf(0, positionsA), buf(1, vParamsUBO), buf(2, auxBuffer),
       ]);
 
+      for (let i = 0; i < poles.length; i++) {
+        poleDrawData[i * 4] = poles[i].x;
+        poleDrawData[i * 4 + 1] = poles[i].y;
+        poleDrawData[i * 4 + 2] = poles[i].z;
+        poleDrawData[i * 4 + 3] = poles[i].charge;
+      }
+      poleBuffer.write(poleDrawData);
+      poleUData[0] = canvas.width; poleUData[1] = canvas.height;
+      poleUData[2] = params.rotationX; poleUData[3] = params.rotationY;
+      poleUData[4] = params.zoom; poleUData[5] = params.poleGlowSize;
+      poleUBO.write(poleUData);
+
+      const poleBindGroup = bg(polePipeline.getBindGroupLayout(0), [
+        buf(0, poleBuffer), buf(1, poleUBO),
+      ]);
+
       chotto.pass({ target: accumWrite, clear: { r: 0, g: 0, b: 0, a: 1 } }, (p) => {
         p.setPipeline(fadePipeline);
         p.setBindGroup(0, fadeBindGroup);
@@ -374,6 +404,10 @@ export const main = async () => {
         p.setPipeline(particlePipeline);
         p.setBindGroup(0, particleBindGroup);
         p.draw(4, drawCount);
+
+        p.setPipeline(polePipeline);
+        p.setBindGroup(0, poleBindGroup);
+        p.draw(4, poles.length);
       });
 
       [accumRead, accumWrite] = [accumWrite, accumRead];
@@ -460,6 +494,7 @@ export const main = async () => {
 
     const visualFolder = gui.addFolder('Visual');
     visualFolder.add(params, 'particleSize', 0.1, 2.0, 0.05).name('Particle Size');
+    visualFolder.add(params, 'poleGlowSize', 5, 60, 1).name('Pole Glow');
     visualFolder.add(params, 'trailDecay', 0.9, 0.995, 0.001).name('Trail Decay');
     visualFolder.add(params, 'exposure', 0.5, 4.0, 0.05).name('Exposure');
     visualFolder.add(params, 'saturation', 0.0, 2.5, 0.05).name('Saturation');
