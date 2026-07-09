@@ -12,8 +12,8 @@ const GRID_X = 128;
 const GRID_Y = 64;
 const GRID_Z = 128;
 const VOXEL_COUNT = GRID_X * GRID_Y * GRID_Z;
-const WATER_LEVEL = 18;
-const CAMERA_DISTANCE = 90;
+const CORE_LEVEL = 30;
+const CAMERA_DISTANCE = 86;
 const RENDER_SCALE = isMobile() ? 0.5 : isTablet() ? 0.75 : 1.0;
 
 export const main = async () => {
@@ -31,9 +31,9 @@ export const main = async () => {
   const genUBO = chotto.buffer(16, { uniform: true });
   const genData = new Float32Array(4);
 
-  function generateTerrain(seed) {
+  function generateScene(seed) {
     genData[0] = seed;
-    genData[1] = WATER_LEVEL;
+    genData[1] = CORE_LEVEL;
     genUBO.write(genData);
 
     const genBG = device.createBindGroup({
@@ -94,20 +94,20 @@ export const main = async () => {
   const params = {
     orbitSpeed: 0.15,
     sunElevation: 0.8,
-    fogDensity: 0.008,
+    fogDensity: 0.006,
     aoStrength: 1.0,
     seed: 42,
   };
 
-  const gui = new GUI({ title: 'Sparse Voxel World' });
+  const gui = new GUI({ title: 'Astral Engine Cathedral' });
   gui.add(params, 'orbitSpeed', 0.0, 0.5, 0.01).name('Orbit Speed');
   gui.add(params, 'sunElevation', 0.2, 1.4, 0.01).name('Sun Elevation');
-  gui.add(params, 'fogDensity', 0.002, 0.02, 0.001).name('Fog');
+  gui.add(params, 'fogDensity', 0.001, 0.014, 0.001).name('Gas Fade');
   gui.add(params, 'aoStrength', 0.0, 2.0, 0.1).name('AO');
   gui.add({
     regenerate: () => {
       params.seed = Math.floor(Math.random() * 10000);
-      generateTerrain(params.seed);
+      generateScene(params.seed);
     },
   }, 'regenerate').name('Regenerate');
   gui.close();
@@ -162,7 +162,7 @@ export const main = async () => {
     rebuildBlitBG();
   }
 
-  generateTerrain(params.seed);
+  generateScene(params.seed);
 
   const render = () => {
     const time = timer.getElapsedTime();
@@ -184,7 +184,7 @@ export const main = async () => {
     uboF32[3] = yaw;
     uboF32[4] = pitch;
     uboF32[5] = CAMERA_DISTANCE;
-    uboF32[6] = WATER_LEVEL;
+    uboF32[6] = CORE_LEVEL;
     uboF32[7] = params.fogDensity;
     uboF32[8] = sunDir[0];
     uboF32[9] = sunDir[1];

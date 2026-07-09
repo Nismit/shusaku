@@ -9,6 +9,13 @@ const HALF_Z: f32 = 64.0;
 const MAX_STEPS: i32 = 384;
 
 const AIR: u32 = 0u;
+const CRYSTAL: u32 = 1u;
+const DARK_CRYSTAL: u32 = 2u;
+const METAL: u32 = 3u;
+const CORE: u32 = 4u;
+const GAS_SEED: u32 = 5u;
+const RUNE: u32 = 6u;
+const SHARD: u32 = 7u;
 
 struct Params {
   resolution: vec2f,
@@ -42,20 +49,30 @@ fn isOccluder(x: i32, y: i32, z: i32) -> f32 {
 
 fn getColor(vt: u32, n: vec3f, cell: vec3i) -> vec3f {
   let posHash = fract(sin(dot(vec2f(f32(cell.x), f32(cell.z)), vec2f(12.9898, 78.233))) * 43758.5453);
-  let variation = 0.90 + 0.20 * posHash;
+  let variation = 0.86 + 0.28 * posHash;
   switch (vt) {
-    case 1u: {
-      let green = vec3f(0.30, 0.55, 0.18);
-      let side = vec3f(0.38, 0.30, 0.16);
-      return mix(side, green, step(0.5, n.y)) * variation;
+    case CRYSTAL: {
+      let facing = pow(1.0 - abs(dot(n, normalize(vec3f(0.35, 0.7, 0.2)))), 2.0);
+      return mix(vec3f(0.20, 0.60, 0.92), vec3f(0.86, 0.97, 1.0), facing) * variation;
     }
-    case 2u: { return vec3f(0.48, 0.32, 0.18) * variation; }
-    case 3u: { return vec3f(0.45, 0.45, 0.48) * variation; }
-    case 4u: { return vec3f(0.94, 0.95, 0.98) * variation; }
-    case 5u: { return vec3f(0.85, 0.76, 0.52) * variation; }
-    case 6u: { return vec3f(0.42, 0.28, 0.15) * variation; }
-    case 7u: { return vec3f(0.18, 0.42, 0.12) * variation; }
+    case DARK_CRYSTAL: { return vec3f(0.14, 0.18, 0.34) * variation; }
+    case METAL: { return mix(vec3f(0.25, 0.27, 0.29), vec3f(0.67, 0.62, 0.52), posHash) * variation; }
+    case CORE: { return vec3f(1.0, 0.55, 0.22) * variation; }
+    case GAS_SEED: { return vec3f(0.15, 0.42, 0.72) * variation; }
+    case RUNE: { return vec3f(0.35, 0.95, 1.0) * variation; }
+    case SHARD: { return vec3f(0.75, 0.40, 1.0) * variation; }
     default: { return vec3f(1.0, 0.0, 1.0); }
+  }
+}
+
+fn getEmission(vt: u32, cell: vec3i) -> vec3f {
+  let h = fract(sin(dot(vec3f(f32(cell.x), f32(cell.y), f32(cell.z)), vec3f(17.1, 31.7, 67.3))) * 43758.5453);
+  switch (vt) {
+    case CORE: { return vec3f(4.5, 1.6, 0.45) * (0.8 + 0.2 * sin(u.time * 2.4)); }
+    case RUNE: { return vec3f(0.2, 1.8, 2.4) * (0.75 + 0.25 * sin(u.time * 3.0 + h * 6.28)); }
+    case SHARD: { return vec3f(0.8, 0.25, 1.5) * 0.45; }
+    case GAS_SEED: { return vec3f(0.1, 0.55, 1.2) * 0.8; }
+    default: { return vec3f(0.0); }
   }
 }
 
@@ -95,14 +112,65 @@ fn edgeDarken(hitPos: vec3f, cell: vec3i, normal: vec3f) -> f32 {
 fn skyColor(rd: vec3f) -> vec3f {
   if (rd.y >= 0.0) {
     let t = pow(rd.y, 0.7);
-    var sky = mix(vec3f(0.70, 0.80, 0.90), vec3f(0.25, 0.45, 0.75), t);
+    var sky = mix(vec3f(0.015, 0.018, 0.035), vec3f(0.05, 0.08, 0.16), t);
     let sunDot = max(dot(rd, u.sunDir), 0.0);
-    sky += vec3f(1.5, 1.3, 0.9) * pow(sunDot, 256.0);
-    sky += vec3f(0.4, 0.3, 0.15) * pow(sunDot, 8.0);
-    sky += vec3f(0.2, 0.2, 0.18) * exp(-rd.y * 8.0);
+    sky += vec3f(0.5, 0.35, 0.8) * pow(sunDot, 96.0);
+    sky += vec3f(0.05, 0.08, 0.12) * exp(-rd.y * 5.0);
     return sky;
   }
-  return mix(vec3f(0.70, 0.80, 0.90), vec3f(0.35, 0.38, 0.33), pow(-rd.y, 0.5));
+  return mix(vec3f(0.012, 0.014, 0.025), vec3f(0.035, 0.028, 0.055), pow(-rd.y, 0.5));
+}
+
+fn hash31(p: vec3f) -> f32 {
+  return fract(sin(dot(p, vec3f(17.31, 59.17, 113.91))) * 43758.5453);
+}
+
+fn noise3(p: vec3f) -> f32 {
+  let i = floor(p);
+  let f = fract(p);
+  let w = f * f * (3.0 - 2.0 * f);
+  let x00 = mix(hash31(i), hash31(i + vec3f(1.0, 0.0, 0.0)), w.x);
+  let x10 = mix(hash31(i + vec3f(0.0, 1.0, 0.0)), hash31(i + vec3f(1.0, 1.0, 0.0)), w.x);
+  let x01 = mix(hash31(i + vec3f(0.0, 0.0, 1.0)), hash31(i + vec3f(1.0, 0.0, 1.0)), w.x);
+  let x11 = mix(hash31(i + vec3f(0.0, 1.0, 1.0)), hash31(i + vec3f(1.0, 1.0, 1.0)), w.x);
+  return mix(mix(x00, x10, w.y), mix(x01, x11, w.y), w.z);
+}
+
+fn nebulaDensity(p: vec3f) -> f32 {
+  let centered = p - vec3f(HALF_X, 30.0, HALF_Z);
+  let r = length(centered.xz);
+  let core = exp(-length(centered) * 0.045);
+  let ring = exp(-abs(r - 28.0) * 0.12) * smoothstep(5.0, 18.0, centered.y + 22.0) * smoothstep(28.0, 6.0, centered.y);
+  let n = noise3(p * 0.045 + vec3f(u.time * 0.018, 0.0, -u.time * 0.012));
+  let n2 = noise3(p * 0.095 + vec3f(4.0, u.time * 0.015, 8.0));
+  return max(0.0, (core * 0.9 + ring * 0.65) * smoothstep(0.28, 0.86, n * 0.7 + n2 * 0.3));
+}
+
+fn integrateNebula(ro: vec3f, rd: vec3f, maxT: f32) -> vec4f {
+  var color = vec3f(0.0);
+  var alpha = 0.0;
+  let steps = 26;
+  let span = min(maxT, 150.0);
+  let stepLen = span / f32(steps);
+  let jitter = hash31(vec3f(ro.xy, u.time)) * stepLen;
+
+  for (var i = 0; i < steps; i++) {
+    let t = f32(i) * stepLen + jitter;
+    let p = ro + rd * t;
+    if (p.x < 0.0 || p.x >= GRID_XF || p.y < 0.0 || p.y >= GRID_YF || p.z < 0.0 || p.z >= GRID_ZF) {
+      continue;
+    }
+    let d = nebulaDensity(p) * 0.09;
+    let centered = p - vec3f(HALF_X, 30.0, HALF_Z);
+    let heat = exp(-length(centered) * 0.06);
+    let gasColor = mix(vec3f(0.08, 0.35, 0.90), vec3f(1.0, 0.34, 0.12), heat);
+    let a = d * stepLen * (1.0 - alpha);
+    color += gasColor * a * (0.7 + heat * 2.7);
+    alpha += a;
+    if (alpha > 0.92) { break; }
+  }
+
+  return vec4f(color, clamp(alpha, 0.0, 0.95));
 }
 
 struct Hit {
@@ -217,7 +285,7 @@ fn fs(@builtin(position) fragCoord: vec4f, @location(0) texCoord: vec2f) -> @loc
   var uv = (fragCoord.xy - u.resolution * 0.5) / u.resolution.y;
   uv.y = -uv.y;
 
-  let center = vec3f(0.0, 24.0, 0.0);
+  let center = vec3f(0.0, 30.0, 0.0);
   let camPos = center + vec3f(
     u.camDist * cos(u.camPitch) * sin(u.camYaw),
     u.camDist * sin(u.camPitch),
@@ -227,67 +295,35 @@ fn fs(@builtin(position) fragCoord: vec4f, @location(0) texCoord: vec2f) -> @loc
   let forward = normalize(center - camPos);
   let right = normalize(cross(forward, vec3f(0.0, 1.0, 0.0)));
   let up = cross(right, forward);
-  let fov = 0.8;
+  let fov = 0.72;
   let rd = normalize(forward + uv.x * right * fov + uv.y * up * fov);
 
   let gridRo = worldToGrid(camPos);
   let hit = march(gridRo, rd);
 
-  var waterT = 1e30;
-  if (abs(rd.y) > 1e-6) {
-    let tw = (u.waterLevel - gridRo.y) / rd.y;
-    if (tw > 0.001) {
-      let wp = gridRo + rd * tw;
-      if (wp.x >= 0.0 && wp.x < GRID_XF && wp.z >= 0.0 && wp.z < GRID_ZF) {
-        waterT = tw;
-      }
-    }
-  }
+  let surfaceT = select(150.0, hit.t, hit.found);
+  let nebula = integrateNebula(gridRo, rd, surfaceT);
+  var col = skyColor(rd);
 
-  let useWater = waterT < 1e29 && (!hit.found || waterT < hit.t);
-  var col = vec3f(0.0);
-
-  if (useWater) {
-    let waterPos = gridRo + rd * waterT;
-
-    var waterCol = vec3f(0.15, 0.32, 0.50);
-    if (hit.found && hit.t > waterT) {
-      let underwaterDist = (hit.t - waterT) * 0.08;
-      let terrainCol = getColor(hit.voxelType, hit.normal, hit.cell);
-      waterCol = mix(terrainCol * 0.45, vec3f(0.08, 0.18, 0.32), min(underwaterDist, 1.0));
-    }
-
-    let fresnel = pow(1.0 - abs(rd.y), 4.0);
-    let reflDir = vec3f(rd.x, abs(rd.y), rd.z);
-    waterCol = mix(waterCol, skyColor(reflDir) * 0.8, fresnel * 0.55);
-
-    let halfVec = normalize(u.sunDir - rd);
-    let spec = pow(max(dot(vec3f(0.0, 1.0, 0.0), halfVec), 0.0), 128.0);
-    waterCol += vec3f(1.0, 0.95, 0.80) * spec * 0.7;
-
-    let ripple = sin(waterPos.x * 2.0 + u.time * 1.5) * sin(waterPos.z * 2.3 + u.time * 1.2) * 0.02;
-    waterCol += vec3f(ripple);
-
-    col = waterCol;
-    let fog = exp(-waterT * u.fogDensity);
-    col = mix(skyColor(rd), col, fog);
-  } else if (hit.found) {
+  if (hit.found) {
     let hitPos = gridRo + rd * hit.t;
     var baseColor = getColor(hit.voxelType, hit.normal, hit.cell);
 
     let NdotL = max(dot(hit.normal, u.sunDir), 0.0);
-    let lighting = 0.35 + NdotL * 0.65;
+    let rim = pow(1.0 - max(dot(-rd, hit.normal), 0.0), 3.0);
+    let lighting = 0.18 + NdotL * 0.55 + rim * 0.5;
 
     let ao = calcAO(hit.cell, hit.normal);
     let edge = edgeDarken(hitPos, hit.cell, hit.normal);
+    let emission = getEmission(hit.voxelType, hit.cell);
 
-    col = baseColor * lighting * ao * edge;
+    col = baseColor * lighting * ao * edge + emission;
 
     let fog = exp(-hit.t * u.fogDensity);
     col = mix(skyColor(rd), col, fog);
-  } else {
-    col = skyColor(rd);
   }
+
+  col = col * (1.0 - nebula.a) + nebula.rgb;
 
   col = col / (col + vec3f(1.0));
   col = pow(col, vec3f(1.0 / 2.2));
