@@ -20,7 +20,7 @@ const FIELD_COUNT = GRID_VERTS * GRID_VERTS * GRID_VERTS;
 const CELL_COUNT = GRID_SIZE * GRID_SIZE * GRID_SIZE;
 const MAX_VERTICES = 400000;
 const WORKGROUP_SIZE = 64;
-const NUM_BALLS = 12;
+const NUM_BALLS = 16;
 const MAX_BALLS = 16;
 const RENDER_FORMAT = 'rgba16float';
 const MAX_BLOOM_ITERATIONS = 8;
@@ -54,12 +54,12 @@ export const main = async () => {
     rotationY: 0.0,
     zoom: 5.5,
     autoRotate: true,
-    autoRotateSpeed: 0.15,
+    autoRotateSpeed: 0.3,
     lightVertical: 0.8,
     lightHorizontal: -1.2,
-    baseColor: '#c87830',
+    baseColor: '#b0c8e8',
     specColor: '#ffffff',
-    fresnelColor: '#5080d0',
+    fresnelColor: '#d0e0ff',
     lightColor: '#ffffff',
     ambient: 0.12,
     shininess: 80.0,
@@ -67,9 +67,9 @@ export const main = async () => {
     exposure: 1.2,
     bgTop: '#0a0e1a',
     bgBottom: '#06080f',
-    orbitSpeed: 1.4,
+    orbitSpeed: 2.8,
     ballRadius: 0.35,
-    bloomEnabled: true,
+    bloomEnabled: false,
     bloomThreshold: 0.5,
     bloomStrength: 0.6,
     bloomIterations: 5,
@@ -174,6 +174,7 @@ export const main = async () => {
       { fx: 0.31, fy: 0.23, fz: 0.37 },
       { fx: 0.19, fy: 0.29, fz: 0.17 },
       { fx: 0.27, fy: 0.13, fz: 0.23 },
+      { fx: 0.23, fy: 0.31, fz: 0.19 },
     ];
     const f = groupFreqs[group];
     const isWanderer = WANDERER_LOCALS.has(local);
@@ -184,14 +185,14 @@ export const main = async () => {
       phaseX: local * Math.PI * 0.5 + group * 1.2,
       phaseY: local * Math.PI * 0.4 + group * 2.1,
       phaseZ: local * Math.PI * 0.6 + group * 0.7,
-      ampX: 0.4 + group * 0.15 + local * 0.04,
-      ampY: 0.3 + Math.sin(i * 1.9) * 0.12,
-      ampZ: 0.4 + group * 0.12 + local * 0.04,
+      ampX: 0.2 + group * 0.08 + local * 0.02,
+      ampY: 0.15 + Math.sin(i * 1.9) * 0.06,
+      ampZ: 0.2 + group * 0.06 + local * 0.02,
       radiusFactor: 0.9 + Math.sin(i * 1.7) * 0.2,
       pulseSpeed: 0.25 + i * 0.03,
       pulsePhase: i * 1.1,
       wanderSpeed: isWanderer ? 0.06 + group * 0.02 + local * 0.015 : 0,
-      wanderAmount: isWanderer ? 1.2 + group * 0.2 : 0,
+      wanderAmount: isWanderer ? 2.4 + group * 0.4 : 0,
       wanderPhase: group * 2.5 + local * 1.7,
     };
   });
@@ -281,6 +282,7 @@ export const main = async () => {
     cameraData[2] = params.rotationX;
     cameraData[3] = params.rotationY;
     cameraData[4] = params.zoom;
+    cameraData[5] = NUM_BALLS;
     cameraData[8] = cosV * Math.sin(params.lightHorizontal);
     cameraData[9] = Math.sin(params.lightVertical);
     cameraData[10] = cosV * Math.cos(params.lightHorizontal);
@@ -327,7 +329,7 @@ export const main = async () => {
       // === Render: bg + mesh ===
       const bgBindGroup = bg(bgPipeline.getBindGroupLayout(0), [buf(0, bgUBO)]);
       const meshBindGroup = bg(meshPipeline.getBindGroupLayout(0), [
-        buf(0, vertexBuffer), buf(1, cameraUBO), buf(2, materialUBO),
+        buf(0, vertexBuffer), buf(1, cameraUBO), buf(2, materialUBO), buf(3, ballBuffer),
       ]);
 
       chotto.pass({ target: renderFBO, clear: { r: 0, g: 0, b: 0, a: 1 } }, (p) => {

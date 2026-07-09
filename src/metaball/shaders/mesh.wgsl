@@ -2,7 +2,7 @@ struct Camera {
   resolution: vec2f,
   rotation: vec2f,
   zoom: f32,
-  _pad0: f32,
+  numBalls: f32,
   _pad1: f32,
   _pad2: f32,
   lightDir: vec3f,
@@ -20,14 +20,20 @@ struct Material {
   exposure: f32,
 }
 
+struct Ball {
+  position: vec3f,
+  radius: f32,
+}
+
 @group(0) @binding(0) var<storage, read> vertices: array<f32>;
 @group(0) @binding(1) var<uniform> camera: Camera;
 @group(0) @binding(2) var<uniform> material: Material;
+@group(0) @binding(3) var<storage, read> balls: array<Ball>;
 
 struct VOut {
   @builtin(position) position: vec4f,
-  @location(0) viewPos: vec3f,
-  @location(1) viewNormal: vec3f,
+  @location(0) worldPos: vec3f,
+  @location(1) viewPos: vec3f,
 }
 
 fn rotateY(v: vec3f, a: f32) -> vec3f {
@@ -43,10 +49,8 @@ fn rotateX(v: vec3f, a: f32) -> vec3f {
 @vertex fn vs(@builtin(vertex_index) vi: u32) -> VOut {
   let base = vi * 6u;
   let pos = vec3f(vertices[base], vertices[base + 1u], vertices[base + 2u]);
-  let normal = vec3f(vertices[base + 3u], vertices[base + 4u], vertices[base + 5u]);
 
   let viewPos = rotateX(rotateY(pos, camera.rotation.y), camera.rotation.x);
-  let viewNormal = rotateX(rotateY(normal, camera.rotation.y), camera.rotation.x);
 
   let aspect = camera.resolution.x / camera.resolution.y;
   let fov = 1.5;
@@ -55,13 +59,24 @@ fn rotateX(v: vec3f, a: f32) -> vec3f {
 
   var out: VOut;
   out.position = vec4f(proj.x / aspect, proj.y, (z - 1.0) / 20.0, 1.0);
+  out.worldPos = pos;
   out.viewPos = viewPos;
-  out.viewNormal = viewNormal;
   return out;
 }
 
 @fragment fn fs(in: VOut) -> @location(0) vec4f {
-  let N = normalize(in.viewNormal);
+  let numBalls = u32(camera.numBalls);
+  var grad = vec3f(0.0);
+  for (var i = 0u; i < numBalls; i++) {
+    let ball = balls[i];
+    let d = in.worldPos - ball.position;
+    let dist2 = dot(d, d) + 0.0001;
+    grad += -2.0 * ball.radius * ball.radius * d / (dist2 * dist2);
+  }
+  let gradLen = length(grad);
+  let worldNormal = select(-grad / gradLen, vec3f(0.0, 1.0, 0.0), gradLen < 0.0001);
+
+  let N = normalize(rotateX(rotateY(worldNormal, camera.rotation.y), camera.rotation.x));
   let V = normalize(-in.viewPos);
   let L = normalize(camera.lightDir);
   let H = normalize(L + V);
@@ -76,14 +91,14 @@ fn rotateX(v: vec3f, a: f32) -> vec3f {
   let fresnel = pow(1.0 - NdotV, material.fresnelPower);
   let rim = material.fresnelColor * fresnel;
 
-  let sssWrap = max(0.0, dot(N, L) * 0.5 + 0.5);
-  let sss = material.baseColor * sssWrap * 0.15;
+  let ao = smoothstep(1.0, 8.0, gradLen) * 0.6 + 0.4;
 
-  let color = material.baseColor * material.ambient
-            + diffuse * material.lightColor
+  let hemiBlend = N.y * 0.5 + 0.5;
+  let hemiAmbient = material.baseColor * material.ambient * (0.6 + 0.4 * hemiBlend);
+
+  let color = (hemiAmbient + diffuse * material.lightColor) * ao
             + spec * material.lightColor
-            + rim
-            + sss;
+            + rim;
 
   return vec4f(color * material.exposure, 1.0);
 }
