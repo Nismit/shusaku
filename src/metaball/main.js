@@ -85,7 +85,7 @@ export const main = async () => {
     bgBottom: '#06080f',
     orbitSpeed: 2.8,
     ballRadius: 0.35,
-    colorBlend: 0.7,
+    colorBlend: 0.9,
     bloomEnabled: false,
     bloomThreshold: 0.5,
     bloomStrength: 0.6,
@@ -224,7 +224,7 @@ export const main = async () => {
     const group = Math.floor(i / 4);
     const local = i % 4;
     const hue = (group / NUM_GROUPS + local * 0.02) % 1.0;
-    const [r, g, b] = hsvToRGB(hue, 0.55, 1.0);
+    const [r, g, b] = hsvToRGB(hue, 0.85, 1.0);
     const base = i * 4;
     ballColorData[base] = r;
     ballColorData[base + 1] = g;
