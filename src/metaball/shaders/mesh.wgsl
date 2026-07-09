@@ -94,10 +94,11 @@ fn rotateX(v: vec3f, a: f32) -> vec3f {
   let NdotV = max(dot(N, V), 0.0);
 
   let diffuse = tintedBase * NdotL;
-  let spec = material.specColor * pow(NdotH, material.shininess);
+  let tintedSpec = mix(material.specColor, tintedBase, camera.colorBlend * 0.5);
+  let spec = tintedSpec * pow(NdotH, material.shininess);
 
   let fresnel = pow(1.0 - NdotV, material.fresnelPower);
-  let tintedFresnel = mix(material.fresnelColor, tintedBase, camera.colorBlend * 0.6);
+  let tintedFresnel = mix(material.fresnelColor, tintedBase, camera.colorBlend);
   let rim = tintedFresnel * fresnel;
 
   let ao = smoothstep(1.0, 8.0, gradLen) * 0.6 + 0.4;
