@@ -22,6 +22,7 @@ export default defineConfig({
         focalRings: resolve(__dirname, 'src/focalRings/index.html'),
         labChamber: resolve(__dirname, 'src/labChamber/index.html'),
         contourTerrain: resolve(__dirname, 'src/contourTerrain/index.html'),
+        magneticField: resolve(__dirname, 'src/magneticField/index.html'),
       },
     },
   },
