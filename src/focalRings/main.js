@@ -4,12 +4,31 @@ import ringDepthWGSL from './shaders/ringDepth.wgsl?raw';
 import dofWGSL from './shaders/dof.wgsl?raw';
 
 const SEGMENTS = 128;
-const THICKNESS = 0.06;
-const NUM_LAYERS = 5;
+const THICKNESS = 0.05;
+const NUM_LAYERS = 1;
 const LAYER_SPACING = 1.0;
 const RADII = [1.0, 2.0, 3.0, 4.0];
-const RING_ALPHAS = [0.9, 0.7, 0.5, 0.35];
-const LAYER_ALPHAS = [0.6, 0.85, 1.0, 0.85, 0.6];
+const RING_ALPHAS = [1.0, 1.0, 1.0, 1.0];
+const LAYER_ALPHAS = [1.0];
+const ARC_SEGS_PER_RAD = 20;
+
+const DECORATIONS = [
+  { ri: 0, start: 0.4, arc: 0.55, width: 0.16, skew: 0.15 },
+  { ri: 0, start: 3.4, arc: 0.35, width: 0.13, skew: 0.15 },
+
+  { ri: 1, start: 0.9, arc: 0.7,  width: 0.22, skew: 0.08 },
+  { ri: 1, start: 2.7, arc: 0.45, width: 0.17, skew: 0.08 },
+  { ri: 1, start: 4.8, arc: 0.6,  width: 0.20, skew: 0.08 },
+
+  { ri: 2, start: 0.15, arc: 0.85, width: 0.26, skew: 0.055 },
+  { ri: 2, start: 1.7,  arc: 0.35, width: 0.19, skew: 0.055 },
+  { ri: 2, start: 3.3,  arc: 1.0,  width: 0.28, skew: 0.055 },
+  { ri: 2, start: 5.3,  arc: 0.45, width: 0.21, skew: 0.055 },
+
+  { ri: 3, start: 0.6, arc: 1.1,  width: 0.32, skew: 0.04 },
+  { ri: 3, start: 2.8, arc: 0.55, width: 0.25, skew: 0.04 },
+  { ri: 3, start: 4.5, arc: 0.85, width: 0.28, skew: 0.04 },
+];
 const CAM_EYE = [10, 14, 10];
 const CAM_TARGET = [0, 0, 0];
 const FOV = 50 * Math.PI / 180;
@@ -92,6 +111,32 @@ function generateRings() {
         const d = a + 3;
         idxs.push(a, c, b, b, c, d);
       }
+    }
+  }
+
+  for (const d of DECORATIONS) {
+    const r = RADII[d.ri];
+    const y = 0;
+    const alpha = 1.0;
+    const innerR = r - d.width / 2;
+    const outerR = r + d.width / 2;
+    const segs = Math.max(8, Math.ceil(d.arc * ARC_SEGS_PER_RAD));
+    const base = verts.length / 4;
+
+    for (let s = 0; s <= segs; s++) {
+      const t = s / segs;
+      const inA = d.start + t * d.arc;
+      const outA = d.start + d.skew + t * d.arc;
+      verts.push(Math.cos(inA) * innerR, y, Math.sin(inA) * innerR, alpha);
+      verts.push(Math.cos(outA) * outerR, y, Math.sin(outA) * outerR, alpha);
+    }
+
+    for (let s = 0; s < segs; s++) {
+      const a = base + s * 2;
+      const b = a + 1;
+      const c = a + 2;
+      const dd = a + 3;
+      idxs.push(a, c, b, b, c, dd);
     }
   }
 
