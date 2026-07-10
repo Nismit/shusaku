@@ -6,39 +6,51 @@ import gridWGSL from './shaders/grid.wgsl?raw';
 import dofWGSL from './shaders/dof.wgsl?raw';
 
 const SEGMENTS = 128;
-const THICKNESS = 0.05;
-const NUM_LAYERS = 1;
-const LAYER_SPACING = 1.0;
-const RADII = [1.0, 2.0, 3.0, 4.0];
-const RING_ALPHAS = [1.0, 1.0, 1.0, 1.0];
-const LAYER_ALPHAS = [1.0];
+const LAYER_THICKNESS = [0.05, 0.14];
+const NUM_LAYERS = 2;
+const LAYER_SPACING = 1.2;
+const LAYER_RADII = [
+  [1.0, 2.0, 3.0, 4.0],
+  [1.5, 3.0],
+];
+const LAYER_RING_ARCS = [
+  null,
+  [
+    [{ start: 0.4, arc: 3.8 }, { start: 4.8, arc: 1.2 }],
+    [{ start: 0.0, arc: 2.2 }, { start: 3.0, arc: 2.5 }],
+  ],
+];
+const LAYER_ALPHAS = [1.0, 0.7];
 const ARC_SEGS_PER_RAD = 20;
 
-const DECORATIONS = [
-  { ri: 0, start: 0.4, arc: 0.55, width: 0.16, skew: 0.15 },
-  { ri: 0, start: 3.4, arc: 0.35, width: 0.13, skew: 0.15 },
-
-  { ri: 1, start: 0.9, arc: 0.7,  width: 0.22, skew: 0.08 },
-  { ri: 1, start: 2.7, arc: 0.45, width: 0.17, skew: 0.08 },
-  { ri: 1, start: 4.8, arc: 0.6,  width: 0.20, skew: 0.08 },
-
-  { ri: 2, start: 0.15, arc: 0.85, width: 0.26, skew: 0.055 },
-  { ri: 2, start: 1.7,  arc: 0.35, width: 0.19, skew: 0.055 },
-  { ri: 2, start: 3.3,  arc: 1.0,  width: 0.28, skew: 0.055 },
-  { ri: 2, start: 5.3,  arc: 0.45, width: 0.21, skew: 0.055 },
-
-  { ri: 3, start: 0.6, arc: 1.1,  width: 0.32, skew: 0.04 },
-  { ri: 3, start: 2.8, arc: 0.55, width: 0.25, skew: 0.04 },
-  { ri: 3, start: 4.5, arc: 0.85, width: 0.28, skew: 0.04 },
+const LAYER_DECORATIONS = [
+  [
+    { ri: 0, start: 0.4, arc: 0.55, width: 0.16, skew: 0.15 },
+    { ri: 0, start: 3.4, arc: 0.35, width: 0.13, skew: 0.15 },
+    { ri: 1, start: 0.9, arc: 0.7,  width: 0.22, skew: 0.08 },
+    { ri: 1, start: 2.7, arc: 0.45, width: 0.17, skew: 0.08 },
+    { ri: 1, start: 4.8, arc: 0.6,  width: 0.20, skew: 0.08 },
+    { ri: 2, start: 0.15, arc: 0.85, width: 0.26, skew: 0.055 },
+    { ri: 2, start: 1.7,  arc: 0.35, width: 0.19, skew: 0.055 },
+    { ri: 2, start: 3.3,  arc: 1.0,  width: 0.28, skew: 0.055 },
+    { ri: 2, start: 5.3,  arc: 0.45, width: 0.21, skew: 0.055 },
+    { ri: 3, start: 0.6, arc: 1.1,  width: 0.32, skew: 0.04 },
+    { ri: 3, start: 2.8, arc: 0.55, width: 0.25, skew: 0.04 },
+    { ri: 3, start: 4.5, arc: 0.85, width: 0.28, skew: 0.04 },
+  ],
+  [],
 ];
 
 const ARC_GAP = 0.15;
 const ARC_MARGIN = 0.1;
-const OUTER_ARCS = [
-  { ri: 0, start: 1.1 + ARC_MARGIN, span: 3.40 - 0.98 - ARC_MARGIN * 2 },
-  { ri: 1, start: 1.70 + ARC_MARGIN, span: 2.70 - 1.80 - ARC_MARGIN * 2 },
-  { ri: 2, start: 2.10 + ARC_MARGIN, span: 3.30 - 2.05 - ARC_MARGIN * 2 },
-  { ri: 3, start: 1.70 + ARC_MARGIN, span: 2.80 - 1.65 - ARC_MARGIN * 2 },
+const LAYER_OUTER_ARCS = [
+  [
+    { ri: 0, start: 1.1 + ARC_MARGIN, span: 3.40 - 0.98 - ARC_MARGIN * 2 },
+    { ri: 1, start: 1.70 + ARC_MARGIN, span: 2.70 - 1.80 - ARC_MARGIN * 2 },
+    { ri: 2, start: 2.10 + ARC_MARGIN, span: 3.30 - 2.05 - ARC_MARGIN * 2 },
+    { ri: 3, start: 1.70 + ARC_MARGIN, span: 2.80 - 1.65 - ARC_MARGIN * 2 },
+  ],
+  [],
 ];
 
 const SHAPE_SEED = 42;
@@ -108,77 +120,93 @@ function generateRings() {
 
   for (let li = 0; li < NUM_LAYERS; li++) {
     const y = (li - half) * LAYER_SPACING;
-    for (let ri = 0; ri < RADII.length; ri++) {
-      const r = RADII[ri];
-      const alpha = RING_ALPHAS[ri] * LAYER_ALPHAS[li];
-      const innerR = r - THICKNESS / 2;
-      const outerR = r + THICKNESS / 2;
+    const radii = LAYER_RADII[li];
+    const thick = LAYER_THICKNESS[li];
+    const arcSpec = LAYER_RING_ARCS[li];
+    for (let ri = 0; ri < radii.length; ri++) {
+      const r = radii[ri];
+      const alpha = LAYER_ALPHAS[li];
+      const innerR = r - thick / 2;
+      const outerR = r + thick / 2;
+
+      const arcs = arcSpec ? arcSpec[ri] : [{ start: 0, arc: Math.PI * 2 }];
+      for (const arc of arcs) {
+        const segs = Math.max(16, Math.ceil((arc.arc / (Math.PI * 2)) * SEGMENTS));
+        const base = verts.length / 4;
+
+        for (let s = 0; s <= segs; s++) {
+          const angle = arc.start + (s / segs) * arc.arc;
+          const c = Math.cos(angle);
+          const sn = Math.sin(angle);
+          verts.push(c * innerR, y, sn * innerR, alpha);
+          verts.push(c * outerR, y, sn * outerR, alpha);
+        }
+
+        for (let s = 0; s < segs; s++) {
+          const a = base + s * 2;
+          const b = a + 1;
+          const c = a + 2;
+          const d = a + 3;
+          idxs.push(a, c, b, b, c, d);
+        }
+      }
+    }
+  }
+
+  for (let li = 0; li < NUM_LAYERS; li++) {
+    const y = (li - half) * LAYER_SPACING;
+    const layerAlpha = LAYER_ALPHAS[li];
+    const radii = LAYER_RADII[li];
+    const thick = LAYER_THICKNESS[li];
+    const decs = LAYER_DECORATIONS[li] || [];
+
+    for (const d of decs) {
+      const r = radii[d.ri];
+      const alpha = layerAlpha;
+      const innerR = r + thick / 2;
+      const outerR = r + thick / 2 + d.width;
+      const segs = Math.max(8, Math.ceil(d.arc * ARC_SEGS_PER_RAD));
       const base = verts.length / 4;
 
-      for (let s = 0; s <= SEGMENTS; s++) {
-        const angle = (s / SEGMENTS) * Math.PI * 2;
-        const c = Math.cos(angle);
-        const sn = Math.sin(angle);
-        verts.push(c * innerR, y, sn * innerR, alpha);
-        verts.push(c * outerR, y, sn * outerR, alpha);
+      for (let s = 0; s <= segs; s++) {
+        const t = s / segs;
+        const inA = d.start + t * d.arc;
+        const outA = d.start + d.skew + t * d.arc;
+        verts.push(Math.cos(inA) * innerR, y, Math.sin(inA) * innerR, alpha);
+        verts.push(Math.cos(outA) * outerR, y, Math.sin(outA) * outerR, alpha);
       }
 
-      for (let s = 0; s < SEGMENTS; s++) {
+      for (let s = 0; s < segs; s++) {
         const a = base + s * 2;
         const b = a + 1;
         const c = a + 2;
-        const d = a + 3;
-        idxs.push(a, c, b, b, c, d);
+        const dd = a + 3;
+        idxs.push(a, c, b, b, c, dd);
       }
     }
-  }
 
-  for (const d of DECORATIONS) {
-    const r = RADII[d.ri];
-    const y = 0;
-    const alpha = 1.0;
-    const innerR = r + THICKNESS / 2;
-    const outerR = r + THICKNESS / 2 + d.width;
-    const segs = Math.max(8, Math.ceil(d.arc * ARC_SEGS_PER_RAD));
-    const base = verts.length / 4;
+    const arcs = LAYER_OUTER_ARCS[li] || [];
+    for (const oa of arcs) {
+      const r = radii[oa.ri];
+      const innerR = r + thick / 2 + ARC_GAP;
+      const outerR = innerR + thick;
+      const startA = oa.start;
+      const segs = Math.max(8, Math.ceil(oa.span * ARC_SEGS_PER_RAD));
+      const base = verts.length / 4;
 
-    for (let s = 0; s <= segs; s++) {
-      const t = s / segs;
-      const inA = d.start + t * d.arc;
-      const outA = d.start + d.skew + t * d.arc;
-      verts.push(Math.cos(inA) * innerR, y, Math.sin(inA) * innerR, alpha);
-      verts.push(Math.cos(outA) * outerR, y, Math.sin(outA) * outerR, alpha);
-    }
-
-    for (let s = 0; s < segs; s++) {
-      const a = base + s * 2;
-      const b = a + 1;
-      const c = a + 2;
-      const dd = a + 3;
-      idxs.push(a, c, b, b, c, dd);
-    }
-  }
-
-  for (const oa of OUTER_ARCS) {
-    const r = RADII[oa.ri];
-    const innerR = r + THICKNESS / 2 + ARC_GAP;
-    const outerR = innerR + THICKNESS;
-    const startA = oa.start;
-    const segs = Math.max(8, Math.ceil(oa.span * ARC_SEGS_PER_RAD));
-    const base = verts.length / 4;
-
-    for (let s = 0; s <= segs; s++) {
-      const t = s / segs;
-      const a = startA + t * oa.span;
-      verts.push(Math.cos(a) * innerR, 0, Math.sin(a) * innerR, 1.0);
-      verts.push(Math.cos(a) * outerR, 0, Math.sin(a) * outerR, 1.0);
-    }
-    for (let s = 0; s < segs; s++) {
-      const a = base + s * 2;
-      const b = a + 1;
-      const c = a + 2;
-      const dd = a + 3;
-      idxs.push(a, c, b, b, c, dd);
+      for (let s = 0; s <= segs; s++) {
+        const t = s / segs;
+        const a = startA + t * oa.span;
+        verts.push(Math.cos(a) * innerR, y, Math.sin(a) * innerR, layerAlpha);
+        verts.push(Math.cos(a) * outerR, y, Math.sin(a) * outerR, layerAlpha);
+      }
+      for (let s = 0; s < segs; s++) {
+        const a = base + s * 2;
+        const b = a + 1;
+        const c = a + 2;
+        const dd = a + 3;
+        idxs.push(a, c, b, b, c, dd);
+      }
     }
   }
 
@@ -202,6 +230,7 @@ function generateGrid() {
     indices: new Uint16Array(idxs),
   };
 }
+
 
 function generateCenterShape(seed) {
   const verts = [];
