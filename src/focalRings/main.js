@@ -2,6 +2,7 @@ import { chottoGPU } from 'chottogpu';
 import { FPSGraph } from '../libs/FPSGraph.js';
 import ringWGSL from './shaders/ring.wgsl?raw';
 import ringDepthWGSL from './shaders/ringDepth.wgsl?raw';
+import gridWGSL from './shaders/grid.wgsl?raw';
 import dofWGSL from './shaders/dof.wgsl?raw';
 
 const SEGMENTS = 128;
@@ -40,6 +41,8 @@ const OUTER_ARCS = [
   { ri: 3, start: 1.70 + ARC_MARGIN, span: 2.80 - 1.65 - ARC_MARGIN * 2 },
 ];
 
+const GRID_EXTENT = 12;
+
 const CAM_EYE = [10, 14, 10];
 const CAM_TARGET = [0, 0, 0];
 const FOV = 50 * Math.PI / 180;
@@ -48,8 +51,8 @@ const FAR = 50.0;
 const MSAA = 4;
 const RENDER_FORMAT = 'rgba16float';
 const DEPTH_TEX_FORMAT = 'r16float';
-const DOF_APERTURE = 14.0;
-const DOF_MAX_BLUR = 24.0;
+const DOF_APERTURE = 8.0;
+const DOF_MAX_BLUR = 16.0;
 
 function lookAt(eye, center, up) {
   const out = new Float32Array(16);
@@ -180,6 +183,21 @@ function generateRings() {
   };
 }
 
+function generateGrid() {
+  const e = GRID_EXTENT;
+  const verts = [
+    -e, 0,  e, 1.0,
+     e, 0,  e, 1.0,
+     e, 0, -e, 1.0,
+    -e, 0, -e, 1.0,
+  ];
+  const idxs = [0, 1, 2, 0, 2, 3];
+  return {
+    positions: new Float32Array(verts),
+    indices: new Uint16Array(idxs),
+  };
+}
+
 function buildViewProj(aspect) {
   const view = lookAt(CAM_EYE, CAM_TARGET, [0, 1, 0]);
   const proj = perspectiveMat(FOV, aspect, NEAR, FAR);
@@ -209,6 +227,11 @@ export const main = async () => {
   const vertexBuffer = gpu.buffer(rings.positions, { vertex: true });
   const indexBuffer = gpu.buffer(rings.indices, { index: true });
   const indexCount = rings.indices.length;
+
+  const grid = generateGrid();
+  const gridVB = gpu.buffer(grid.positions, { vertex: true });
+  const gridIB = gpu.buffer(grid.indices, { index: true });
+  const gridIdxCount = grid.indices.length;
 
   const vertexLayout = [{
     arrayStride: 16,
@@ -254,6 +277,21 @@ export const main = async () => {
     cullMode: 'none',
   });
 
+  const gridColorPipe = gpu.pipeline({
+    vertex: gridWGSL,
+    fragment: gridWGSL,
+    format: RENDER_FORMAT,
+    vertexBuffers: vertexLayout,
+    depthTest: true,
+    depthWrite: false,
+    cullMode: 'none',
+    samples: MSAA,
+    blend: {
+      color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+      alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+    },
+  });
+
   const dofPipe = gpu.pipeline({
     vertex: gpu.FULLSCREEN_VERT,
     fragment: dofWGSL,
@@ -266,6 +304,11 @@ export const main = async () => {
 
   const depthBG = gpu.device.createBindGroup({
     layout: ringDepthPipe.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
+  });
+
+  const gridBG = gpu.device.createBindGroup({
+    layout: gridColorPipe.getBindGroupLayout(0),
     entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
   });
 
@@ -308,12 +351,21 @@ export const main = async () => {
       gpu.pass({ target: depthFBO, clear: [1, 0, 0, 1] }, (p) => {
         p.setPipeline(ringDepthPipe);
         p.setBindGroup(0, depthBG);
+        p.setVertexBuffer(0, gridVB.buffer);
+        p.setIndexBuffer(gridIB.buffer, 'uint16');
+        p.drawIndexed(gridIdxCount);
         p.setVertexBuffer(0, vertexBuffer.buffer);
         p.setIndexBuffer(indexBuffer.buffer, 'uint16');
         p.drawIndexed(indexCount);
       });
 
       gpu.pass({ target: colorFBO, clear: [0, 0, 0, 1] }, (p) => {
+        p.setPipeline(gridColorPipe);
+        p.setBindGroup(0, gridBG);
+        p.setVertexBuffer(0, gridVB.buffer);
+        p.setIndexBuffer(gridIB.buffer, 'uint16');
+        p.drawIndexed(gridIdxCount);
+
         p.setPipeline(ringColorPipe);
         p.setBindGroup(0, colorBG);
         p.setVertexBuffer(0, vertexBuffer.buffer);
