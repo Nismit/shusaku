@@ -74,6 +74,17 @@ const TICK_CONFIGS = [
   [],
 ];
 
+const STRIPE_ARC_CONFIGS = [
+  { radius: 2.5, thickness: 0.07, count: 36, arcDeg: 5.5, alpha: 0.4, speed: 0.06 },
+  { radius: 3.5, thickness: 0.06, count: 48, arcDeg: 4.0, alpha: 0.35, speed: -0.04 },
+];
+
+const BORDER_SQUARE = { halfSize: 5.2, thickness: 0.02, alpha: 0.3 };
+const BORDER_STRIPES = {
+  inset: 0.12, regionWidth: 0.5, spanZ: 10.2,
+  spacing: 0.28, lineWidth: 0.07, alpha: 0.15,
+};
+
 const GRID_EXTENT = 12;
 
 const CAM_EYE = [10, 14, 10];
@@ -264,6 +275,92 @@ function generateRings() {
         verts.push(c * tickOuter - px, y, s * tickOuter - pz, alpha, spd);
         verts.push(c * tickInner + px, y, s * tickInner + pz, alpha, spd);
         verts.push(c * tickInner - px, y, s * tickInner - pz, alpha, spd);
+        idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+      }
+    }
+  }
+
+  for (const cfg of STRIPE_ARC_CONFIGS) {
+    const innerR = cfg.radius - cfg.thickness / 2;
+    const outerR = cfg.radius + cfg.thickness / 2;
+    const arcRad = cfg.arcDeg * Math.PI / 180;
+    const spacing = (Math.PI * 2) / cfg.count;
+    const segs = Math.max(4, Math.ceil(arcRad * ARC_SEGS_PER_RAD));
+
+    for (let i = 0; i < cfg.count; i++) {
+      const startAngle = i * spacing;
+      const base = verts.length / STRIDE;
+
+      for (let s = 0; s <= segs; s++) {
+        const t = s / segs;
+        const a = startAngle + t * arcRad;
+        const c = Math.cos(a);
+        const sn = Math.sin(a);
+        verts.push(c * innerR, 0, sn * innerR, cfg.alpha, cfg.speed);
+        verts.push(c * outerR, 0, sn * outerR, cfg.alpha, cfg.speed);
+      }
+
+      for (let s = 0; s < segs; s++) {
+        const a = base + s * 2;
+        const b = a + 1;
+        const cc = a + 2;
+        const d = a + 3;
+        idxs.push(a, cc, b, b, cc, d);
+      }
+    }
+  }
+
+  {
+    const bs = BORDER_SQUARE;
+    const h = bs.halfSize;
+    const t = bs.thickness / 2;
+    const corners = [
+      [-h, -h], [h, -h], [h, h], [-h, h],
+    ];
+    for (let i = 0; i < 4; i++) {
+      const [ax, az] = corners[i];
+      const [bx, bz] = corners[(i + 1) % 4];
+      const dx = bx - ax, dz = bz - az;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      const nx = -dz / len * t, nz = dx / len * t;
+      const base = verts.length / STRIDE;
+      verts.push(ax + nx, 0, az + nz, bs.alpha, 0);
+      verts.push(ax - nx, 0, az - nz, bs.alpha, 0);
+      verts.push(bx + nx, 0, bz + nz, bs.alpha, 0);
+      verts.push(bx - nx, 0, bz - nz, bs.alpha, 0);
+      idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+    }
+  }
+
+  {
+    const st = BORDER_STRIPES;
+    const h = BORDER_SQUARE.halfSize;
+    const hw = st.lineWidth / 2;
+    const px = hw / Math.SQRT2;
+    const pz = -px;
+    const z0 = -st.spanZ / 2;
+    const z1 = st.spanZ / 2;
+
+    const regions = [
+      { x0: -h + st.inset, x1: -h + st.inset + st.regionWidth },
+      { x0: h - st.inset - st.regionWidth, x1: h - st.inset },
+    ];
+
+    for (const reg of regions) {
+      const dMin = reg.x0 - z1;
+      const dMax = reg.x1 - z0;
+
+      for (let d = dMin; d <= dMax; d += st.spacing) {
+        const xs = Math.max(reg.x0, z0 + d);
+        const xe = Math.min(reg.x1, z1 + d);
+        if (xs >= xe) continue;
+        const zs = xs - d;
+        const ze = xe - d;
+        const base = verts.length / STRIDE;
+        verts.push(xs + px, 0, zs + pz, st.alpha, 0);
+        verts.push(xs - px, 0, zs - pz, st.alpha, 0);
+        verts.push(xe + px, 0, ze + pz, st.alpha, 0);
+        verts.push(xe - px, 0, ze - pz, st.alpha, 0);
         idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
       }
     }
