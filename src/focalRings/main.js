@@ -4,10 +4,12 @@ import ringWGSL from './shaders/ring.wgsl?raw';
 import ringDepthWGSL from './shaders/ringDepth.wgsl?raw';
 import gridWGSL from './shaders/grid.wgsl?raw';
 import dofWGSL from './shaders/dof.wgsl?raw';
+import bloomExtractWGSL from './shaders/bloomExtract.wgsl?raw';
+import blurWGSL from './shaders/blur.wgsl?raw';
 
 const SEGMENTS = 128;
 const LAYER_THICKNESS = [0.05, 0.14];
-const NUM_LAYERS = 2;
+const NUM_LAYERS = 1;
 const LAYER_SPACING = 1.2;
 const LAYER_RADII = [
   [1.0, 2.0, 3.0, 4.0],
@@ -62,6 +64,16 @@ const SHAPE_LINE_W = 0.035;
 const SHAPE_PTS_PER_Q = 3;
 const SHAPE_NUM_RINGS = 3;
 
+const TICK_CONFIGS = [
+  [
+    { ri: 0, majorDeg: 45, minorDeg: 15, majorLen: 0.08, minorLen: 0.035, width: 0.008 },
+    { ri: 1, majorDeg: 15, minorDeg: 3,  majorLen: 0.12, minorLen: 0.045, width: 0.020 },
+    { ri: 2, majorDeg: 20, minorDeg: 5,  majorLen: 0.14, minorLen: 0.05,  width: 0.010 },
+    { ri: 3, majorDeg: 15, minorDeg: 5,  majorLen: 0.18, minorLen: 0.06,  width: 0.012 },
+  ],
+  [],
+];
+
 const GRID_EXTENT = 12;
 
 const CAM_EYE = [10, 14, 10];
@@ -74,6 +86,8 @@ const RENDER_FORMAT = 'rgba16float';
 const DEPTH_TEX_FORMAT = 'r16float';
 const DOF_APERTURE = 4.0;
 const DOF_MAX_BLUR = 10.0;
+const BLOOM_SPREAD = 2.5;
+const BLOOM_INTENSITY = 0.35;
 
 function lookAt(eye, center, up) {
   const out = new Float32Array(16);
@@ -220,6 +234,41 @@ function generateRings() {
     }
   }
 
+  for (let li = 0; li < NUM_LAYERS; li++) {
+    const y = (li - half) * LAYER_SPACING;
+    const radii = LAYER_RADII[li];
+    const thick = LAYER_THICKNESS[li];
+    const speeds = LAYER_RING_SPEEDS[li];
+    const ticks = TICK_CONFIGS[li] || [];
+    const layerAlpha = LAYER_ALPHAS[li];
+
+    for (const tc of ticks) {
+      const r = radii[tc.ri];
+      const spd = speeds[tc.ri];
+      const innerR = r - thick / 2;
+      const halfW = tc.width / 2;
+
+      for (let deg = 0; deg < 360; deg += tc.minorDeg) {
+        const isMajor = deg % tc.majorDeg === 0;
+        const tickLen = isMajor ? tc.majorLen : tc.minorLen;
+        const alpha = isMajor ? layerAlpha : layerAlpha * 0.5;
+        const angle = deg * Math.PI / 180;
+        const c = Math.cos(angle);
+        const s = Math.sin(angle);
+        const px = -s * halfW;
+        const pz = c * halfW;
+        const tickOuter = innerR;
+        const tickInner = innerR - tickLen;
+        const base = verts.length / STRIDE;
+        verts.push(c * tickOuter + px, y, s * tickOuter + pz, alpha, spd);
+        verts.push(c * tickOuter - px, y, s * tickOuter - pz, alpha, spd);
+        verts.push(c * tickInner + px, y, s * tickInner + pz, alpha, spd);
+        verts.push(c * tickInner - px, y, s * tickInner - pz, alpha, spd);
+        idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+      }
+    }
+  }
+
   return {
     positions: new Float32Array(verts),
     indices: new Uint16Array(idxs),
@@ -350,6 +399,11 @@ export const main = async () => {
     format: DEPTH_TEX_FORMAT, depth: true,
   });
 
+  let bloomW = Math.floor(canvas.width / 2);
+  let bloomH = Math.floor(canvas.height / 2);
+  let bloomA = gpu.framebuffer(bloomW, bloomH, { format: RENDER_FORMAT });
+  let bloomB = gpu.framebuffer(bloomW, bloomH, { format: RENDER_FORMAT });
+
   const rings = generateRings();
   const vertexBuffer = gpu.buffer(rings.positions, { vertex: true });
   const indexBuffer = gpu.buffer(rings.indices, { index: true });
@@ -430,6 +484,18 @@ export const main = async () => {
     fragment: dofWGSL,
   });
 
+  const bloomExtractPipe = gpu.pipeline({
+    vertex: gpu.FULLSCREEN_VERT,
+    fragment: bloomExtractWGSL,
+    format: RENDER_FORMAT,
+  });
+
+  const blurPipe = gpu.pipeline({
+    vertex: gpu.FULLSCREEN_VERT,
+    fragment: blurWGSL,
+    format: RENDER_FORMAT,
+  });
+
   const colorBG = gpu.device.createBindGroup({
     layout: ringColorPipe.getBindGroupLayout(0),
     entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
@@ -450,7 +516,13 @@ export const main = async () => {
     addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge',
   });
 
+  const blurHData = new Float32Array(4);
+  const blurVData = new Float32Array(4);
+  const blurHUBO = gpu.buffer(blurHData, { uniform: true });
+  const blurVUBO = gpu.buffer(blurVData, { uniform: true });
+
   let dofBG;
+  let extractBG, blurHBG, blurVBG;
 
   function updateUniforms(w, h, time) {
     const vp = buildViewProj(w / h);
@@ -467,7 +539,43 @@ export const main = async () => {
     dofData[2] = focalDist / FAR;
     dofData[3] = DOF_APERTURE;
     dofData[4] = DOF_MAX_BLUR;
+    dofData[5] = BLOOM_INTENSITY;
     dofUBO.write(dofData);
+
+    const bw = Math.floor(w / 2);
+    const bh = Math.floor(h / 2);
+    blurHData[0] = 1.0; blurHData[1] = 0.0;
+    blurHData[2] = BLOOM_SPREAD / bw; blurHData[3] = BLOOM_SPREAD / bh;
+    blurHUBO.write(blurHData);
+    blurVData[0] = 0.0; blurVData[1] = 1.0;
+    blurVData[2] = BLOOM_SPREAD / bw; blurVData[3] = BLOOM_SPREAD / bh;
+    blurVUBO.write(blurVData);
+
+    extractBG = gpu.device.createBindGroup({
+      layout: bloomExtractPipe.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: dofSampler },
+        { binding: 1, resource: colorFBO.view },
+      ],
+    });
+
+    blurHBG = gpu.device.createBindGroup({
+      layout: blurPipe.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: dofSampler },
+        { binding: 1, resource: bloomA.view },
+        { binding: 2, resource: { buffer: blurHUBO.buffer } },
+      ],
+    });
+
+    blurVBG = gpu.device.createBindGroup({
+      layout: blurPipe.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: dofSampler },
+        { binding: 1, resource: bloomB.view },
+        { binding: 2, resource: { buffer: blurVUBO.buffer } },
+      ],
+    });
 
     dofBG = gpu.device.createBindGroup({
       layout: dofPipe.getBindGroupLayout(0),
@@ -476,6 +584,7 @@ export const main = async () => {
         { binding: 1, resource: colorFBO.view },
         { binding: 2, resource: depthFBO.view },
         { binding: 3, resource: { buffer: dofUBO.buffer } },
+        { binding: 4, resource: bloomA.view },
       ],
     });
   }
@@ -513,6 +622,24 @@ export const main = async () => {
         p.drawIndexed(indexCount);
       });
 
+      gpu.pass({ target: bloomA, clear: [0, 0, 0, 1] }, (p) => {
+        p.setPipeline(bloomExtractPipe);
+        p.setBindGroup(0, extractBG);
+        p.draw(3);
+      });
+
+      gpu.pass({ target: bloomB, clear: [0, 0, 0, 1] }, (p) => {
+        p.setPipeline(blurPipe);
+        p.setBindGroup(0, blurHBG);
+        p.draw(3);
+      });
+
+      gpu.pass({ target: bloomA, clear: [0, 0, 0, 1] }, (p) => {
+        p.setPipeline(blurPipe);
+        p.setBindGroup(0, blurVBG);
+        p.draw(3);
+      });
+
       gpu.pass((p) => {
         p.setPipeline(dofPipe);
         p.setBindGroup(0, dofBG);
@@ -524,6 +651,10 @@ export const main = async () => {
   gpu.fitWindow((w, h) => {
     colorFBO.resize(w, h);
     depthFBO.resize(w, h);
+    bloomW = Math.floor(w / 2);
+    bloomH = Math.floor(h / 2);
+    bloomA.resize(bloomW, bloomH);
+    bloomB.resize(bloomW, bloomH);
   });
 
   const startTime = performance.now();

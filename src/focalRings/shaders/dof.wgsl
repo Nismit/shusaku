@@ -7,12 +7,13 @@ struct DofParams {
   focalDepth: f32,
   aperture: f32,
   maxBlur: f32,
-  _pad0: f32,
+  bloomIntensity: f32,
   _pad1: f32,
   _pad2: f32,
 };
 
 @group(0) @binding(3) var<uniform> dof: DofParams;
+@group(0) @binding(4) var bloomTex: texture_2d<f32>;
 
 const GOLDEN_ANGLE: f32 = 2.39996323;
 const NUM_SAMPLES: i32 = 64;
@@ -44,5 +45,9 @@ const BG_DEPTH: f32 = 0.9;
   }
 
   col /= wt;
+
+  let bloom = textureSample(bloomTex, samp, uv).rgb;
+  col += bloom * dof.bloomIntensity;
+
   return vec4f(pow(saturate(col), vec3f(1.0 / 2.2)), 1.0);
 }
