@@ -58,7 +58,7 @@ const LAYER_OUTER_ARCS = [
 ];
 
 const SHAPE_SEED = 42;
-const SHAPE_LINE_W = 0.025;
+const SHAPE_LINE_W = 0.035;
 const SHAPE_PTS_PER_Q = 3;
 const SHAPE_NUM_RINGS = 3;
 
@@ -72,8 +72,8 @@ const FAR = 50.0;
 const MSAA = 4;
 const RENDER_FORMAT = 'rgba16float';
 const DEPTH_TEX_FORMAT = 'r16float';
-const DOF_APERTURE = 8.0;
-const DOF_MAX_BLUR = 16.0;
+const DOF_APERTURE = 4.0;
+const DOF_MAX_BLUR = 10.0;
 
 function lookAt(eye, center, up) {
   const out = new Float32Array(16);
@@ -275,15 +275,15 @@ function generateCenterShape(seed) {
     idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
   }
 
-  const apexY = 3.0 + rand() * 1.0;
-  const nadirY = -(0.3 + rand() * 0.5);
+  const apexY = 5.0 + rand() * 1.5;
+  const nadirY = -(0.6 + rand() * 0.8);
 
   const allRings = [];
   for (let ri = 0; ri < SHAPE_NUM_RINGS; ri++) {
     const t = (ri + 1) / (SHAPE_NUM_RINGS + 1);
     const y = nadirY + t * (apexY - nadirY);
     const taper = 1.0 - 2.0 * Math.abs(t - 0.5);
-    const baseR = (0.5 + rand() * 0.5) * (0.5 + taper * 0.5);
+    const baseR = (0.9 + rand() * 0.7) * (0.5 + taper * 0.5);
 
     const q1 = [];
     for (let i = 0; i < SHAPE_PTS_PER_Q; i++) {
