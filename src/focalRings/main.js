@@ -21,6 +21,10 @@ const LAYER_RING_ARCS = [
   ],
 ];
 const LAYER_ALPHAS = [1.0, 0.7];
+const LAYER_RING_SPEEDS = [
+  [0.3, -0.15, 0.08, -0.05],
+  [-0.2, 0.12],
+];
 const ARC_SEGS_PER_RAD = 20;
 
 const LAYER_DECORATIONS = [
@@ -117,29 +121,32 @@ function generateRings() {
   const verts = [];
   const idxs = [];
   const half = (NUM_LAYERS - 1) / 2;
+  const STRIDE = 5;
 
   for (let li = 0; li < NUM_LAYERS; li++) {
     const y = (li - half) * LAYER_SPACING;
     const radii = LAYER_RADII[li];
     const thick = LAYER_THICKNESS[li];
     const arcSpec = LAYER_RING_ARCS[li];
+    const speeds = LAYER_RING_SPEEDS[li];
     for (let ri = 0; ri < radii.length; ri++) {
       const r = radii[ri];
       const alpha = LAYER_ALPHAS[li];
+      const spd = speeds[ri];
       const innerR = r - thick / 2;
       const outerR = r + thick / 2;
 
       const arcs = arcSpec ? arcSpec[ri] : [{ start: 0, arc: Math.PI * 2 }];
       for (const arc of arcs) {
         const segs = Math.max(16, Math.ceil((arc.arc / (Math.PI * 2)) * SEGMENTS));
-        const base = verts.length / 4;
+        const base = verts.length / STRIDE;
 
         for (let s = 0; s <= segs; s++) {
           const angle = arc.start + (s / segs) * arc.arc;
           const c = Math.cos(angle);
           const sn = Math.sin(angle);
-          verts.push(c * innerR, y, sn * innerR, alpha);
-          verts.push(c * outerR, y, sn * outerR, alpha);
+          verts.push(c * innerR, y, sn * innerR, alpha, spd);
+          verts.push(c * outerR, y, sn * outerR, alpha, spd);
         }
 
         for (let s = 0; s < segs; s++) {
@@ -158,22 +165,24 @@ function generateRings() {
     const layerAlpha = LAYER_ALPHAS[li];
     const radii = LAYER_RADII[li];
     const thick = LAYER_THICKNESS[li];
+    const speeds = LAYER_RING_SPEEDS[li];
     const decs = LAYER_DECORATIONS[li] || [];
 
     for (const d of decs) {
       const r = radii[d.ri];
+      const spd = speeds[d.ri];
       const alpha = layerAlpha;
       const innerR = r + thick / 2;
       const outerR = r + thick / 2 + d.width;
       const segs = Math.max(8, Math.ceil(d.arc * ARC_SEGS_PER_RAD));
-      const base = verts.length / 4;
+      const base = verts.length / STRIDE;
 
       for (let s = 0; s <= segs; s++) {
         const t = s / segs;
         const inA = d.start + t * d.arc;
         const outA = d.start + d.skew + t * d.arc;
-        verts.push(Math.cos(inA) * innerR, y, Math.sin(inA) * innerR, alpha);
-        verts.push(Math.cos(outA) * outerR, y, Math.sin(outA) * outerR, alpha);
+        verts.push(Math.cos(inA) * innerR, y, Math.sin(inA) * innerR, alpha, spd);
+        verts.push(Math.cos(outA) * outerR, y, Math.sin(outA) * outerR, alpha, spd);
       }
 
       for (let s = 0; s < segs; s++) {
@@ -188,17 +197,18 @@ function generateRings() {
     const arcs = LAYER_OUTER_ARCS[li] || [];
     for (const oa of arcs) {
       const r = radii[oa.ri];
+      const spd = speeds[oa.ri];
       const innerR = r + thick / 2 + ARC_GAP;
       const outerR = innerR + thick;
       const startA = oa.start;
       const segs = Math.max(8, Math.ceil(oa.span * ARC_SEGS_PER_RAD));
-      const base = verts.length / 4;
+      const base = verts.length / STRIDE;
 
       for (let s = 0; s <= segs; s++) {
         const t = s / segs;
         const a = startA + t * oa.span;
-        verts.push(Math.cos(a) * innerR, y, Math.sin(a) * innerR, layerAlpha);
-        verts.push(Math.cos(a) * outerR, y, Math.sin(a) * outerR, layerAlpha);
+        verts.push(Math.cos(a) * innerR, y, Math.sin(a) * innerR, layerAlpha, spd);
+        verts.push(Math.cos(a) * outerR, y, Math.sin(a) * outerR, layerAlpha, spd);
       }
       for (let s = 0; s < segs; s++) {
         const a = base + s * 2;
@@ -219,10 +229,10 @@ function generateRings() {
 function generateGrid() {
   const e = GRID_EXTENT;
   const verts = [
-    -e, 0,  e, 1.0,
-     e, 0,  e, 1.0,
-     e, 0, -e, 1.0,
-    -e, 0, -e, 1.0,
+    -e, 0,  e, 1.0, 0,
+     e, 0,  e, 1.0, 0,
+     e, 0, -e, 1.0, 0,
+    -e, 0, -e, 1.0, 0,
   ];
   const idxs = [0, 1, 2, 0, 2, 3];
   return {
@@ -257,11 +267,11 @@ function generateCenterShape(seed) {
     const perp = vecNorm(cross(dir, camDir));
     const hw = SHAPE_LINE_W / 2;
     const px = perp[0] * hw, py = perp[1] * hw, pz = perp[2] * hw;
-    const base = verts.length / 4;
-    verts.push(ax + px, ay + py, az + pz, 1.0);
-    verts.push(ax - px, ay - py, az - pz, 1.0);
-    verts.push(bx + px, by + py, bz + pz, 1.0);
-    verts.push(bx - px, by - py, bz - pz, 1.0);
+    const base = verts.length / 5;
+    verts.push(ax + px, ay + py, az + pz, 1.0, 0);
+    verts.push(ax - px, ay - py, az - pz, 1.0, 0);
+    verts.push(bx + px, by + py, bz + pz, 1.0, 0);
+    verts.push(bx - px, by - py, bz - pz, 1.0, 0);
     idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
   }
 
@@ -356,14 +366,15 @@ export const main = async () => {
   const shapeIdxCount = shape.indices.length;
 
   const vertexLayout = [{
-    arrayStride: 16,
+    arrayStride: 20,
     attributes: [
       { shaderLocation: 0, offset: 0, format: 'float32x3' },
       { shaderLocation: 1, offset: 12, format: 'float32' },
+      { shaderLocation: 2, offset: 16, format: 'float32' },
     ],
   }];
 
-  const sceneData = new Float32Array(20);
+  const sceneData = new Float32Array(24);
   const sceneUBO = gpu.buffer(sceneData, { uniform: true });
 
   const dofData = new Float32Array(8);
@@ -441,13 +452,14 @@ export const main = async () => {
 
   let dofBG;
 
-  function updateUniforms(w, h) {
+  function updateUniforms(w, h, time) {
     const vp = buildViewProj(w / h);
     sceneData.set(vp, 0);
     sceneData[16] = CAM_EYE[0];
     sceneData[17] = CAM_EYE[1];
     sceneData[18] = CAM_EYE[2];
     sceneData[19] = FAR;
+    sceneData[20] = time;
     sceneUBO.write(sceneData);
 
     dofData[0] = w;
@@ -509,23 +521,18 @@ export const main = async () => {
     });
   }
 
-  let dirty = true;
-
   gpu.fitWindow((w, h) => {
     colorFBO.resize(w, h);
     depthFBO.resize(w, h);
-    dirty = true;
   });
 
+  const startTime = performance.now();
   const loop = () => {
-    if (dirty) {
-      updateUniforms(canvas.width, canvas.height);
-      render();
-      dirty = false;
-    }
+    const time = (performance.now() - startTime) / 1000;
+    updateUniforms(canvas.width, canvas.height, time);
+    render();
     fpsGraph.update();
     requestAnimationFrame(loop);
   };
-  dirty = true;
   loop();
 };
