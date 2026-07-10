@@ -41,6 +41,11 @@ const OUTER_ARCS = [
   { ri: 3, start: 1.70 + ARC_MARGIN, span: 2.80 - 1.65 - ARC_MARGIN * 2 },
 ];
 
+const SHAPE_SEED = 42;
+const SHAPE_LINE_W = 0.025;
+const SHAPE_PTS_PER_Q = 3;
+const SHAPE_NUM_RINGS = 3;
+
 const GRID_EXTENT = 12;
 
 const CAM_EYE = [10, 14, 10];
@@ -198,6 +203,89 @@ function generateGrid() {
   };
 }
 
+function generateCenterShape(seed) {
+  const verts = [];
+  const idxs = [];
+  let s = seed;
+  const rand = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+
+  const camLen = Math.sqrt(CAM_EYE[0] ** 2 + CAM_EYE[1] ** 2 + CAM_EYE[2] ** 2);
+  const camDir = [CAM_EYE[0] / camLen, CAM_EYE[1] / camLen, CAM_EYE[2] / camLen];
+
+  function cross(a, b) {
+    return [a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0]];
+  }
+  function vecNorm(v) {
+    const l = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
+    return l < 1e-6 ? [0, 1, 0] : [v[0] / l, v[1] / l, v[2] / l];
+  }
+
+  function addLine3D(ax, ay, az, bx, by, bz) {
+    const dx = bx - ax, dy = by - ay, dz = bz - az;
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (len < 0.001) return;
+    const dir = [dx / len, dy / len, dz / len];
+    const perp = vecNorm(cross(dir, camDir));
+    const hw = SHAPE_LINE_W / 2;
+    const px = perp[0] * hw, py = perp[1] * hw, pz = perp[2] * hw;
+    const base = verts.length / 4;
+    verts.push(ax + px, ay + py, az + pz, 1.0);
+    verts.push(ax - px, ay - py, az - pz, 1.0);
+    verts.push(bx + px, by + py, bz + pz, 1.0);
+    verts.push(bx - px, by - py, bz - pz, 1.0);
+    idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+  }
+
+  const apexY = 3.0 + rand() * 1.0;
+  const nadirY = -(0.3 + rand() * 0.5);
+
+  const allRings = [];
+  for (let ri = 0; ri < SHAPE_NUM_RINGS; ri++) {
+    const t = (ri + 1) / (SHAPE_NUM_RINGS + 1);
+    const y = nadirY + t * (apexY - nadirY);
+    const taper = 1.0 - 2.0 * Math.abs(t - 0.5);
+    const baseR = (0.5 + rand() * 0.5) * (0.5 + taper * 0.5);
+
+    const q1 = [];
+    for (let i = 0; i < SHAPE_PTS_PER_Q; i++) {
+      const angle = ((i + 0.5) / SHAPE_PTS_PER_Q) * Math.PI / 2;
+      const r = baseR * (0.6 + rand() * 0.8);
+      q1.push([Math.cos(angle) * r, Math.sin(angle) * r]);
+    }
+
+    const ring = [];
+    for (const [x, z] of q1) ring.push([x, y, z]);
+    for (const [x, z] of [...q1].reverse()) ring.push([-x, y, z]);
+    for (const [x, z] of q1) ring.push([-x, y, -z]);
+    for (const [x, z] of [...q1].reverse()) ring.push([x, y, -z]);
+    allRings.push(ring);
+  }
+
+  for (const ring of allRings) {
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      addLine3D(a[0], a[1], a[2], b[0], b[1], b[2]);
+    }
+  }
+
+  for (let ri = 0; ri < allRings.length - 1; ri++) {
+    const r0 = allRings[ri], r1 = allRings[ri + 1];
+    for (let i = 0; i < r0.length; i++) {
+      addLine3D(r0[i][0], r0[i][1], r0[i][2], r1[i][0], r1[i][1], r1[i][2]);
+    }
+  }
+
+  const top = allRings[allRings.length - 1];
+  const bot = allRings[0];
+  for (const p of top) addLine3D(p[0], p[1], p[2], 0, apexY, 0);
+  for (const p of bot) addLine3D(p[0], p[1], p[2], 0, nadirY, 0);
+
+  return {
+    positions: new Float32Array(verts),
+    indices: new Uint16Array(idxs),
+  };
+}
+
 function buildViewProj(aspect) {
   const view = lookAt(CAM_EYE, CAM_TARGET, [0, 1, 0]);
   const proj = perspectiveMat(FOV, aspect, NEAR, FAR);
@@ -232,6 +320,11 @@ export const main = async () => {
   const gridVB = gpu.buffer(grid.positions, { vertex: true });
   const gridIB = gpu.buffer(grid.indices, { index: true });
   const gridIdxCount = grid.indices.length;
+
+  const shape = generateCenterShape(SHAPE_SEED);
+  const shapeVB = gpu.buffer(shape.positions, { vertex: true });
+  const shapeIB = gpu.buffer(shape.indices, { index: true });
+  const shapeIdxCount = shape.indices.length;
 
   const vertexLayout = [{
     arrayStride: 16,
@@ -354,6 +447,9 @@ export const main = async () => {
         p.setVertexBuffer(0, gridVB.buffer);
         p.setIndexBuffer(gridIB.buffer, 'uint16');
         p.drawIndexed(gridIdxCount);
+        p.setVertexBuffer(0, shapeVB.buffer);
+        p.setIndexBuffer(shapeIB.buffer, 'uint16');
+        p.drawIndexed(shapeIdxCount);
         p.setVertexBuffer(0, vertexBuffer.buffer);
         p.setIndexBuffer(indexBuffer.buffer, 'uint16');
         p.drawIndexed(indexCount);
@@ -368,6 +464,9 @@ export const main = async () => {
 
         p.setPipeline(ringColorPipe);
         p.setBindGroup(0, colorBG);
+        p.setVertexBuffer(0, shapeVB.buffer);
+        p.setIndexBuffer(shapeIB.buffer, 'uint16');
+        p.drawIndexed(shapeIdxCount);
         p.setVertexBuffer(0, vertexBuffer.buffer);
         p.setIndexBuffer(indexBuffer.buffer, 'uint16');
         p.drawIndexed(indexCount);
