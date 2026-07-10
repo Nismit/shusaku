@@ -1,4 +1,5 @@
 import { chottoGPU } from 'chottogpu';
+import { FPSGraph } from '../libs/FPSGraph.js';
 import ringWGSL from './shaders/ring.wgsl?raw';
 import ringDepthWGSL from './shaders/ringDepth.wgsl?raw';
 import dofWGSL from './shaders/dof.wgsl?raw';
@@ -29,6 +30,16 @@ const DECORATIONS = [
   { ri: 3, start: 2.8, arc: 0.55, width: 0.25, skew: 0.04 },
   { ri: 3, start: 4.5, arc: 0.85, width: 0.28, skew: 0.04 },
 ];
+
+const ARC_GAP = 0.15;
+const ARC_MARGIN = 0.1;
+const OUTER_ARCS = [
+  { ri: 0, start: 1.1 + ARC_MARGIN, span: 3.40 - 0.98 - ARC_MARGIN * 2 },
+  { ri: 1, start: 1.70 + ARC_MARGIN, span: 2.70 - 1.80 - ARC_MARGIN * 2 },
+  { ri: 2, start: 2.10 + ARC_MARGIN, span: 3.30 - 2.05 - ARC_MARGIN * 2 },
+  { ri: 3, start: 1.70 + ARC_MARGIN, span: 2.80 - 1.65 - ARC_MARGIN * 2 },
+];
+
 const CAM_EYE = [10, 14, 10];
 const CAM_TARGET = [0, 0, 0];
 const FOV = 50 * Math.PI / 180;
@@ -118,8 +129,8 @@ function generateRings() {
     const r = RADII[d.ri];
     const y = 0;
     const alpha = 1.0;
-    const innerR = r - d.width / 2;
-    const outerR = r + d.width / 2;
+    const innerR = r + THICKNESS / 2;
+    const outerR = r + THICKNESS / 2 + d.width;
     const segs = Math.max(8, Math.ceil(d.arc * ARC_SEGS_PER_RAD));
     const base = verts.length / 4;
 
@@ -131,6 +142,29 @@ function generateRings() {
       verts.push(Math.cos(outA) * outerR, y, Math.sin(outA) * outerR, alpha);
     }
 
+    for (let s = 0; s < segs; s++) {
+      const a = base + s * 2;
+      const b = a + 1;
+      const c = a + 2;
+      const dd = a + 3;
+      idxs.push(a, c, b, b, c, dd);
+    }
+  }
+
+  for (const oa of OUTER_ARCS) {
+    const r = RADII[oa.ri];
+    const innerR = r + THICKNESS / 2 + ARC_GAP;
+    const outerR = innerR + THICKNESS;
+    const startA = oa.start;
+    const segs = Math.max(8, Math.ceil(oa.span * ARC_SEGS_PER_RAD));
+    const base = verts.length / 4;
+
+    for (let s = 0; s <= segs; s++) {
+      const t = s / segs;
+      const a = startA + t * oa.span;
+      verts.push(Math.cos(a) * innerR, 0, Math.sin(a) * innerR, 1.0);
+      verts.push(Math.cos(a) * outerR, 0, Math.sin(a) * outerR, 1.0);
+    }
     for (let s = 0; s < segs; s++) {
       const a = base + s * 2;
       const b = a + 1;
@@ -161,6 +195,7 @@ export const main = async () => {
   canvas.width = Math.floor(window.innerWidth * dpr);
   canvas.height = Math.floor(window.innerHeight * dpr);
 
+  const fpsGraph = new FPSGraph();
   const gpu = await chottoGPU(canvas);
 
   let colorFBO = gpu.framebuffer(canvas.width, canvas.height, {
@@ -308,6 +343,7 @@ export const main = async () => {
       render();
       dirty = false;
     }
+    fpsGraph.update();
     requestAnimationFrame(loop);
   };
   dirty = true;
