@@ -6,6 +6,8 @@ import gridWGSL from './shaders/grid.wgsl?raw';
 import dofWGSL from './shaders/dof.wgsl?raw';
 import bloomExtractWGSL from './shaders/bloomExtract.wgsl?raw';
 import blurWGSL from './shaders/blur.wgsl?raw';
+import sdfShapeWGSL from './shaders/sdfShape.wgsl?raw';
+import sdfShapeDepthWGSL from './shaders/sdfShapeDepth.wgsl?raw';
 
 const SEGMENTS = 128;
 const LAYER_THICKNESS = [0.05, 0.14];
@@ -59,10 +61,9 @@ const LAYER_OUTER_ARCS = [
   [],
 ];
 
-const SHAPE_SEED = Math.floor(Math.random() * 2147483646) + 1;
-const SHAPE_FACE_ALPHA = 0.18;
-const SHAPE_PTS_PER_Q = 3;
-const SHAPE_NUM_RINGS = 3;
+const SDF_BOX_XZ = 2.5;
+const SDF_BOX_Y_MIN = -0.5;
+const SDF_BOX_Y_MAX = 5.5;
 
 const TICK_CONFIGS = [
   [
@@ -388,73 +389,26 @@ function generateGrid() {
 }
 
 
-function generateCenterShape(seed) {
+function generateSDFBox() {
+  const h = SDF_BOX_XZ;
+  const y0 = SDF_BOX_Y_MIN;
+  const y1 = SDF_BOX_Y_MAX;
+  const corners = [
+    [-h, y0, -h], [ h, y0, -h], [ h, y0,  h], [-h, y0,  h],
+    [-h, y1, -h], [ h, y1, -h], [ h, y1,  h], [-h, y1,  h],
+  ];
   const verts = [];
-  const idxs = [];
-  let s = seed;
-  const rand = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
-
-  const apexY = 5.0 + rand() * 1.5;
-  const nadirY = -(0.6 + rand() * 0.8);
-
-  const allRings = [];
-  for (let ri = 0; ri < SHAPE_NUM_RINGS; ri++) {
-    const t = (ri + 1) / (SHAPE_NUM_RINGS + 1);
-    const y = nadirY + t * (apexY - nadirY);
-    const taper = 1.0 - 2.0 * Math.abs(t - 0.5);
-    const baseR = (0.9 + rand() * 0.7) * (0.5 + taper * 0.5);
-
-    const q1 = [];
-    for (let i = 0; i < SHAPE_PTS_PER_Q; i++) {
-      const angle = ((i + 0.5) / SHAPE_PTS_PER_Q) * Math.PI / 2;
-      const r = baseR * (0.6 + rand() * 0.8);
-      q1.push([Math.cos(angle) * r, Math.sin(angle) * r]);
-    }
-
-    const ring = [];
-    for (const [x, z] of q1) ring.push([x, y, z]);
-    for (const [x, z] of [...q1].reverse()) ring.push([-x, y, z]);
-    for (const [x, z] of q1) ring.push([-x, y, -z]);
-    for (const [x, z] of [...q1].reverse()) ring.push([x, y, -z]);
-    allRings.push(ring);
+  for (const [x, y, z] of corners) {
+    verts.push(x, y, z, 1.0, 0.0);
   }
-
-  const STRIDE = 5;
-  const ringStart = [];
-  for (const ring of allRings) {
-    ringStart.push(verts.length / STRIDE);
-    for (const [x, y, z] of ring) {
-      verts.push(x, y, z, SHAPE_FACE_ALPHA, 0);
-    }
-  }
-
-  const apexIdx = verts.length / STRIDE;
-  verts.push(0, apexY, 0, SHAPE_FACE_ALPHA, 0);
-  const nadirIdx = verts.length / STRIDE;
-  verts.push(0, nadirY, 0, SHAPE_FACE_ALPHA, 0);
-
-  const n = allRings[0].length;
-
-  for (let ri = 0; ri < allRings.length - 1; ri++) {
-    const b0 = ringStart[ri];
-    const b1 = ringStart[ri + 1];
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      idxs.push(b0 + i, b1 + i, b0 + j);
-      idxs.push(b0 + j, b1 + i, b1 + j);
-    }
-  }
-
-  const topBase = ringStart[allRings.length - 1];
-  for (let i = 0; i < n; i++) {
-    idxs.push(topBase + i, apexIdx, topBase + (i + 1) % n);
-  }
-
-  const botBase = ringStart[0];
-  for (let i = 0; i < n; i++) {
-    idxs.push(botBase + i, botBase + (i + 1) % n, nadirIdx);
-  }
-
+  const idxs = [
+    0, 1, 2, 0, 2, 3,
+    5, 4, 7, 5, 7, 6,
+    0, 3, 7, 0, 7, 4,
+    1, 5, 6, 1, 6, 2,
+    0, 4, 5, 0, 5, 1,
+    3, 2, 6, 3, 6, 7,
+  ];
   return {
     positions: new Float32Array(verts),
     indices: new Uint16Array(idxs),
@@ -501,10 +455,10 @@ export const main = async () => {
   const gridIB = gpu.buffer(grid.indices, { index: true });
   const gridIdxCount = grid.indices.length;
 
-  const shape = generateCenterShape(SHAPE_SEED);
-  const shapeVB = gpu.buffer(shape.positions, { vertex: true });
-  const shapeIB = gpu.buffer(shape.indices, { index: true });
-  const shapeIdxCount = shape.indices.length;
+  const sdfBox = generateSDFBox();
+  const sdfBoxVB = gpu.buffer(sdfBox.positions, { vertex: true });
+  const sdfBoxIB = gpu.buffer(sdfBox.indices, { index: true });
+  const sdfBoxIdxCount = sdfBox.indices.length;
 
   const vertexLayout = [{
     arrayStride: 20,
@@ -551,6 +505,26 @@ export const main = async () => {
     cullMode: 'none',
   });
 
+  const sdfColorPipe = gpu.pipeline({
+    vertex: sdfShapeWGSL,
+    fragment: sdfShapeWGSL,
+    format: RENDER_FORMAT,
+    vertexBuffers: vertexLayout,
+    depthTest: true,
+    depthWrite: true,
+    cullMode: 'back',
+    samples: MSAA,
+  });
+
+  const sdfDepthPipe = gpu.pipeline({
+    vertex: sdfShapeDepthWGSL,
+    fragment: sdfShapeDepthWGSL,
+    format: DEPTH_TEX_FORMAT,
+    vertexBuffers: vertexLayout,
+    depthTest: true,
+    cullMode: 'back',
+  });
+
   const gridColorPipe = gpu.pipeline({
     vertex: gridWGSL,
     fragment: gridWGSL,
@@ -595,6 +569,16 @@ export const main = async () => {
 
   const gridBG = gpu.device.createBindGroup({
     layout: gridColorPipe.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
+  });
+
+  const sdfColorBG = gpu.device.createBindGroup({
+    layout: sdfColorPipe.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
+  });
+
+  const sdfDepthBG = gpu.device.createBindGroup({
+    layout: sdfDepthPipe.getBindGroupLayout(0),
     entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
   });
 
@@ -684,9 +668,15 @@ export const main = async () => {
         p.setVertexBuffer(0, gridVB.buffer);
         p.setIndexBuffer(gridIB.buffer, 'uint16');
         p.drawIndexed(gridIdxCount);
-        p.setVertexBuffer(0, shapeVB.buffer);
-        p.setIndexBuffer(shapeIB.buffer, 'uint16');
-        p.drawIndexed(shapeIdxCount);
+
+        p.setPipeline(sdfDepthPipe);
+        p.setBindGroup(0, sdfDepthBG);
+        p.setVertexBuffer(0, sdfBoxVB.buffer);
+        p.setIndexBuffer(sdfBoxIB.buffer, 'uint16');
+        p.drawIndexed(sdfBoxIdxCount);
+
+        p.setPipeline(ringDepthPipe);
+        p.setBindGroup(0, depthBG);
         p.setVertexBuffer(0, vertexBuffer.buffer);
         p.setIndexBuffer(indexBuffer.buffer, 'uint16');
         p.drawIndexed(indexCount);
@@ -699,11 +689,14 @@ export const main = async () => {
         p.setIndexBuffer(gridIB.buffer, 'uint16');
         p.drawIndexed(gridIdxCount);
 
+        p.setPipeline(sdfColorPipe);
+        p.setBindGroup(0, sdfColorBG);
+        p.setVertexBuffer(0, sdfBoxVB.buffer);
+        p.setIndexBuffer(sdfBoxIB.buffer, 'uint16');
+        p.drawIndexed(sdfBoxIdxCount);
+
         p.setPipeline(ringColorPipe);
         p.setBindGroup(0, colorBG);
-        p.setVertexBuffer(0, shapeVB.buffer);
-        p.setIndexBuffer(shapeIB.buffer, 'uint16');
-        p.drawIndexed(shapeIdxCount);
         p.setVertexBuffer(0, vertexBuffer.buffer);
         p.setIndexBuffer(indexBuffer.buffer, 'uint16');
         p.drawIndexed(indexCount);
