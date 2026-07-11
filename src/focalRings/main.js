@@ -59,8 +59,8 @@ const LAYER_OUTER_ARCS = [
   [],
 ];
 
-const SHAPE_SEED = 42;
-const SHAPE_LINE_W = 0.035;
+const SHAPE_SEED = Math.floor(Math.random() * 2147483646) + 1;
+const SHAPE_FACE_ALPHA = 0.18;
 const SHAPE_PTS_PER_Q = 3;
 const SHAPE_NUM_RINGS = 3;
 
@@ -394,33 +394,6 @@ function generateCenterShape(seed) {
   let s = seed;
   const rand = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
 
-  const camLen = Math.sqrt(CAM_EYE[0] ** 2 + CAM_EYE[1] ** 2 + CAM_EYE[2] ** 2);
-  const camDir = [CAM_EYE[0] / camLen, CAM_EYE[1] / camLen, CAM_EYE[2] / camLen];
-
-  function cross(a, b) {
-    return [a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0]];
-  }
-  function vecNorm(v) {
-    const l = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
-    return l < 1e-6 ? [0, 1, 0] : [v[0] / l, v[1] / l, v[2] / l];
-  }
-
-  function addLine3D(ax, ay, az, bx, by, bz) {
-    const dx = bx - ax, dy = by - ay, dz = bz - az;
-    const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (len < 0.001) return;
-    const dir = [dx / len, dy / len, dz / len];
-    const perp = vecNorm(cross(dir, camDir));
-    const hw = SHAPE_LINE_W / 2;
-    const px = perp[0] * hw, py = perp[1] * hw, pz = perp[2] * hw;
-    const base = verts.length / 5;
-    verts.push(ax + px, ay + py, az + pz, 1.0, 0);
-    verts.push(ax - px, ay - py, az - pz, 1.0, 0);
-    verts.push(bx + px, by + py, bz + pz, 1.0, 0);
-    verts.push(bx - px, by - py, bz - pz, 1.0, 0);
-    idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
-  }
-
   const apexY = 5.0 + rand() * 1.5;
   const nadirY = -(0.6 + rand() * 0.8);
 
@@ -446,24 +419,41 @@ function generateCenterShape(seed) {
     allRings.push(ring);
   }
 
+  const STRIDE = 5;
+  const ringStart = [];
   for (const ring of allRings) {
-    for (let i = 0; i < ring.length; i++) {
-      const a = ring[i], b = ring[(i + 1) % ring.length];
-      addLine3D(a[0], a[1], a[2], b[0], b[1], b[2]);
+    ringStart.push(verts.length / STRIDE);
+    for (const [x, y, z] of ring) {
+      verts.push(x, y, z, SHAPE_FACE_ALPHA, 0);
     }
   }
+
+  const apexIdx = verts.length / STRIDE;
+  verts.push(0, apexY, 0, SHAPE_FACE_ALPHA, 0);
+  const nadirIdx = verts.length / STRIDE;
+  verts.push(0, nadirY, 0, SHAPE_FACE_ALPHA, 0);
+
+  const n = allRings[0].length;
 
   for (let ri = 0; ri < allRings.length - 1; ri++) {
-    const r0 = allRings[ri], r1 = allRings[ri + 1];
-    for (let i = 0; i < r0.length; i++) {
-      addLine3D(r0[i][0], r0[i][1], r0[i][2], r1[i][0], r1[i][1], r1[i][2]);
+    const b0 = ringStart[ri];
+    const b1 = ringStart[ri + 1];
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      idxs.push(b0 + i, b1 + i, b0 + j);
+      idxs.push(b0 + j, b1 + i, b1 + j);
     }
   }
 
-  const top = allRings[allRings.length - 1];
-  const bot = allRings[0];
-  for (const p of top) addLine3D(p[0], p[1], p[2], 0, apexY, 0);
-  for (const p of bot) addLine3D(p[0], p[1], p[2], 0, nadirY, 0);
+  const topBase = ringStart[allRings.length - 1];
+  for (let i = 0; i < n; i++) {
+    idxs.push(topBase + i, apexIdx, topBase + (i + 1) % n);
+  }
+
+  const botBase = ringStart[0];
+  for (let i = 0; i < n; i++) {
+    idxs.push(botBase + i, botBase + (i + 1) % n, nadirIdx);
+  }
 
   return {
     positions: new Float32Array(verts),
