@@ -22,9 +22,10 @@ struct VOut {
 const GRID_SPACING: f32 = 2.0;
 const LINE_BASE_ALPHA: f32 = 0.12;
 const LINE_COLOR: vec3f = vec3f(0.35, 0.35, 0.35);
-const CROSS_RADIUS: f32 = 0.06;
-const CROSS_WIDTH_MULT: f32 = 4.0;
-const CROSS_ALPHA_MULT: f32 = 2.5;
+const CROSS_RADIUS: f32 = 0.1;
+const CROSS_WIDTH_MULT: f32 = 7.0;
+const CROSS_ALPHA_MULT: f32 = 5.0;
+const CROSS_COLOR: vec3f = vec3f(0.9, 0.9, 0.9);
 
 @fragment fn fs(v: VOut) -> @location(0) vec4f {
   let coord = v.worldPos.xz / GRID_SPACING;
@@ -41,6 +42,7 @@ const CROSS_ALPHA_MULT: f32 = 2.5;
   let dist = length(v.worldPos.xz);
   let fade = 1.0 - smoothstep(3.0, 10.0, dist);
 
+  let color = mix(LINE_COLOR, CROSS_COLOR, crossFactor);
   let alpha = mask * LINE_BASE_ALPHA * mix(1.0, CROSS_ALPHA_MULT, crossFactor) * fade;
-  return vec4f(LINE_COLOR, alpha);
+  return vec4f(color, alpha);
 }
