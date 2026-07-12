@@ -7,6 +7,7 @@ import bloomExtractWGSL from './shaders/bloomExtract.wgsl?raw';
 import blurWGSL from './shaders/blur.wgsl?raw';
 import sdfShapeWGSL from './shaders/sdfShape.wgsl?raw';
 import hexRunnerWGSL from './shaders/hexRunner.wgsl?raw';
+import gaugeWGSL from './shaders/gauge.wgsl?raw';
 import { isMobile } from '../libs/DeviceDetect.js';
 
 const SEGMENTS = 128;
@@ -87,6 +88,14 @@ const BORDER_STRIPES = {
   distance: 9.5, regionWidth: 0.5, spanZ: 10.2,
   spacing: 0.28, lineWidth: 0.07, alpha: 0.15,
 };
+
+const GAUGE_CONFIGS = [
+  { centerDeg: -45, spanDeg: 46, innerR: 5.3, outerR: 5.9, tickProtrude: 0.12, tickWidth: 0.05 },
+  { centerDeg: 135, spanDeg: 46, innerR: 5.3, outerR: 5.9, tickProtrude: 0.12, tickWidth: 0.05 },
+];
+const GAUGE_TRACK_ALPHA = 0.14;
+const GAUGE_FILL_ALPHA = 0.85;
+const GAUGE_TICK_ALPHA = 0.8;
 
 const GRID_EXTENT = 12;
 
@@ -426,6 +435,68 @@ function generateRings() {
   };
 }
 
+function generateGauges() {
+  const verts = [];
+  const idxs = [];
+  const STRIDE = 5;
+
+  for (const cfg of GAUGE_CONFIGS) {
+    const centerA = cfg.centerDeg * Math.PI / 180;
+    const span = cfg.spanDeg * Math.PI / 180;
+    const startA = centerA - span / 2;
+    const segs = Math.max(8, Math.ceil(span * ARC_SEGS_PER_RAD));
+
+    {
+      const base = verts.length / STRIDE;
+      for (let s = 0; s <= segs; s++) {
+        const a = startA + (s / segs) * span;
+        const c = Math.cos(a), sn = Math.sin(a);
+        verts.push(c * cfg.innerR, 0, sn * cfg.innerR, GAUGE_TRACK_ALPHA, -1);
+        verts.push(c * cfg.outerR, 0, sn * cfg.outerR, GAUGE_TRACK_ALPHA, -1);
+      }
+      for (let s = 0; s < segs; s++) {
+        const a = base + s * 2, b = a + 1, c = a + 2, d = a + 3;
+        idxs.push(a, c, b, b, c, d);
+      }
+    }
+
+    {
+      const base = verts.length / STRIDE;
+      for (let s = 0; s <= segs; s++) {
+        const param = s / segs;
+        const a = startA + param * span;
+        const c = Math.cos(a), sn = Math.sin(a);
+        verts.push(c * cfg.innerR, 0, sn * cfg.innerR, GAUGE_FILL_ALPHA, param);
+        verts.push(c * cfg.outerR, 0, sn * cfg.outerR, GAUGE_FILL_ALPHA, param);
+      }
+      for (let s = 0; s < segs; s++) {
+        const a = base + s * 2, b = a + 1, c = a + 2, d = a + 3;
+        idxs.push(a, c, b, b, c, d);
+      }
+    }
+
+    for (const param of [0, 0.5, 1]) {
+      const a = startA + param * span;
+      const c = Math.cos(a), sn = Math.sin(a);
+      const tx = -sn, tz = c;
+      const hw = cfg.tickWidth / 2;
+      const rInner = cfg.innerR - cfg.tickProtrude;
+      const rOuter = cfg.outerR + cfg.tickProtrude;
+      const base = verts.length / STRIDE;
+      verts.push(c * rInner + tx * hw, 0, sn * rInner + tz * hw, GAUGE_TICK_ALPHA, -1);
+      verts.push(c * rInner - tx * hw, 0, sn * rInner - tz * hw, GAUGE_TICK_ALPHA, -1);
+      verts.push(c * rOuter + tx * hw, 0, sn * rOuter + tz * hw, GAUGE_TICK_ALPHA, -1);
+      verts.push(c * rOuter - tx * hw, 0, sn * rOuter - tz * hw, GAUGE_TICK_ALPHA, -1);
+      idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+    }
+  }
+
+  return {
+    positions: new Float32Array(verts),
+    indices: new Uint16Array(idxs),
+  };
+}
+
 function generateGrid() {
   const e = GRID_EXTENT;
   const verts = [
@@ -548,6 +619,11 @@ export const main = async () => {
   const hexRunnerIB = gpu.buffer(hexRunner.indices, { index: true });
   const hexRunnerIdxCount = hexRunner.indices.length;
 
+  const gauges = generateGauges();
+  const gaugeVB = gpu.buffer(gauges.positions, { vertex: true });
+  const gaugeIB = gpu.buffer(gauges.indices, { index: true });
+  const gaugeIdxCount = gauges.indices.length;
+
   const vertexLayout = [{
     arrayStride: 20,
     attributes: [
@@ -626,6 +702,21 @@ export const main = async () => {
     },
   });
 
+  const gaugePipe = gpu.pipeline({
+    vertex: gaugeWGSL,
+    fragment: gaugeWGSL,
+    format: RENDER_FORMAT,
+    vertexBuffers: vertexLayout,
+    depthTest: true,
+    depthWrite: false,
+    cullMode: 'none',
+    samples: MSAA,
+    blend: {
+      color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+      alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+    },
+  });
+
   const compositePipe = gpu.pipeline({
     vertex: gpu.FULLSCREEN_VERT,
     fragment: compositeWGSL,
@@ -661,6 +752,11 @@ export const main = async () => {
 
   const sdfColorBG = gpu.device.createBindGroup({
     layout: sdfColorPipe.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
+  });
+
+  const gaugeBG = gpu.device.createBindGroup({
+    layout: gaugePipe.getBindGroupLayout(0),
     entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
   });
 
@@ -764,6 +860,12 @@ export const main = async () => {
         p.setVertexBuffer(0, sdfBoxVB.buffer);
         p.setIndexBuffer(sdfBoxIB.buffer, 'uint16');
         p.drawIndexed(sdfBoxIdxCount);
+
+        p.setPipeline(gaugePipe);
+        p.setBindGroup(0, gaugeBG);
+        p.setVertexBuffer(0, gaugeVB.buffer);
+        p.setIndexBuffer(gaugeIB.buffer, 'uint16');
+        p.drawIndexed(gaugeIdxCount);
       });
 
       gpu.pass({ target: bloomA, clear: [0, 0, 0, 1] }, (p) => {
