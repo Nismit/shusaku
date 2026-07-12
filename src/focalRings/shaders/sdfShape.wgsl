@@ -83,11 +83,15 @@ const SURF_DIST: f32 = 0.001;
     smoothstep(-0.3, 0.4, sin(dispersion * 4.0 + 2.1)),
     smoothstep(-0.3, 0.4, sin(dispersion * 4.0 + 4.2)),
   );
-  let prismStrength = fresnel * 0.6;
+  let prismStrength = fresnel * 0.9;
 
   let edge = smoothstep(0.0, 0.4, fresnel);
-  let col = mix(vec3f(0.9), rainbow, prismStrength) + spec * 0.8 + spec2 * 0.4;
+  let baseCol = mix(vec3f(0.9), rainbow, prismStrength) + spec * 0.8 + spec2 * 0.4;
   let alpha = 0.08 + edge * 0.5 + spec * 0.6 + spec2 * 0.3 + prismStrength * 0.3;
+
+  const SATURATION_BOOST: f32 = 1.7;
+  let luma = dot(baseCol, vec3f(0.299, 0.587, 0.114));
+  let col = luma + (baseCol - luma) * SATURATION_BOOST;
 
   const BLOOM_BOOST: f32 = 1.8;
   return vec4f(col * BLOOM_BOOST, saturate(alpha));
