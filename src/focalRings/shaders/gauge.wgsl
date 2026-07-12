@@ -23,7 +23,7 @@ struct VOut {
   return out;
 }
 
-const GAUGE_SPEED: f32 = 0.55;
+const GAUGE_SPEED: f32 = 0.88;
 const EDGE_WIDTH: f32 = 0.04;
 
 @fragment fn fs(v: VOut) -> @location(0) vec4f {
