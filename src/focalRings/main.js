@@ -24,8 +24,8 @@ const LAYER_RING_ARCS = [
 ];
 const LAYER_ALPHAS = [1.0, 0.7];
 const LAYER_RING_SPEEDS = [
-  [0.3, -0.15, 0.08, -0.05],
-  [-0.2, 0.12],
+  [0.36, -0.18, 0.096, -0.06],
+  [-0.24, 0.144],
 ];
 const ARC_SEGS_PER_RAD = 20;
 
@@ -74,13 +74,14 @@ const TICK_CONFIGS = [
 ];
 
 const STRIPE_ARC_CONFIGS = [
-  { radius: 2.5, thickness: 0.07, count: 36, arcDeg: 5.5, alpha: 0.4, speed: 0.06 },
-  { radius: 3.5, thickness: 0.06, count: 48, arcDeg: 4.0, alpha: 0.35, speed: -0.04 },
+  { radius: 2.5, thickness: 0.07, count: 36, arcDeg: 5.5, alpha: 0.4, speed: 0.072 },
+  { radius: 3.5, thickness: 0.06, count: 48, arcDeg: 4.0, alpha: 0.35, speed: -0.048 },
 ];
 
-const BORDER_SQUARE = { halfSize: 5.2, thickness: 0.02, alpha: 0.3 };
+const BORDER_HEX = { radius: 7.5, thickness: 0.06, alpha: 0.9, cornerLen: 1.2, thickEdges: [4], thickScale: 3.0 };
+const BORDER_HEX_INNER = { radius: 7.1, thickness: 0.04, alpha: 0.1 };
 const BORDER_STRIPES = {
-  inset: 0.12, regionWidth: 0.5, spanZ: 10.2,
+  distance: 9.5, regionWidth: 0.5, spanZ: 10.2,
   spacing: 0.28, lineWidth: 0.07, alpha: 0.15,
 };
 
@@ -95,6 +96,7 @@ const MSAA = 4;
 const RENDER_FORMAT = 'rgba16float';
 const BLOOM_SPREAD = 2.5;
 const BLOOM_INTENSITY = 0.35;
+const CA_STRENGTH = 0.03;
 
 function lookAt(eye, center, up) {
   const out = new Float32Array(16);
@@ -307,30 +309,76 @@ function generateRings() {
   }
 
   {
-    const bs = BORDER_SQUARE;
-    const h = bs.halfSize;
-    const t = bs.thickness / 2;
-    const corners = [
-      [-h, -h], [h, -h], [h, h], [-h, h],
-    ];
-    for (let i = 0; i < 4; i++) {
+    const bh = BORDER_HEX;
+    const r = bh.radius;
+    const t = bh.thickness / 2;
+    const cl = bh.cornerLen;
+    const corners = [];
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI / 3 * i - Math.PI / 6;
+      corners.push([Math.cos(a) * r, Math.sin(a) * r]);
+    }
+    for (let i = 0; i < 6; i++) {
+      const [cx, cz] = corners[i];
+      const [px, pz] = corners[(i + 5) % 6];
+      const [nx2, nz2] = corners[(i + 1) % 6];
+      const toPrev = [px - cx, pz - cz];
+      const toNext = [nx2 - cx, nz2 - cz];
+      const lenPrev = Math.sqrt(toPrev[0] ** 2 + toPrev[1] ** 2);
+      const lenNext = Math.sqrt(toNext[0] ** 2 + toNext[1] ** 2);
+      const segLen = Math.min(cl, lenPrev / 2, lenNext / 2);
+      const ep = [cx + toPrev[0] / lenPrev * segLen, cz + toPrev[1] / lenPrev * segLen];
+      const en = [cx + toNext[0] / lenNext * segLen, cz + toNext[1] / lenNext * segLen];
+
+      const prevEdge = (i + 5) % 6;
+      const nextEdge = i;
+      const prevThick = bh.thickEdges.includes(prevEdge) ? bh.thickScale : 1.0;
+      const nextThick = bh.thickEdges.includes(nextEdge) ? bh.thickScale : 1.0;
+
+      const segs = [[ep[0], ep[1], cx, cz, prevThick], [cx, cz, en[0], en[1], nextThick]];
+      for (const [ax, az, bx, bz, scale] of segs) {
+        const dx = bx - ax, dz = bz - az;
+        const len = Math.sqrt(dx * dx + dz * dz);
+        if (len < 0.001) continue;
+        const tt = t * scale;
+        const nnx = -dz / len * tt, nnz = dx / len * tt;
+        const base = verts.length / STRIDE;
+        verts.push(ax + nnx, 0, az + nnz, bh.alpha, 0);
+        verts.push(ax - nnx, 0, az - nnz, bh.alpha, 0);
+        verts.push(bx + nnx, 0, bz + nnz, bh.alpha, 0);
+        verts.push(bx - nnx, 0, bz - nnz, bh.alpha, 0);
+        idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+      }
+    }
+  }
+
+  {
+    const bi = BORDER_HEX_INNER;
+    const r = bi.radius;
+    const t = bi.thickness / 2;
+    const corners = [];
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI / 3 * i - Math.PI / 6;
+      corners.push([Math.cos(a) * r, Math.sin(a) * r]);
+    }
+    for (let i = 0; i < 6; i++) {
       const [ax, az] = corners[i];
-      const [bx, bz] = corners[(i + 1) % 4];
+      const [bx, bz] = corners[(i + 1) % 6];
       const dx = bx - ax, dz = bz - az;
       const len = Math.sqrt(dx * dx + dz * dz);
       const nx = -dz / len * t, nz = dx / len * t;
       const base = verts.length / STRIDE;
-      verts.push(ax + nx, 0, az + nz, bs.alpha, 0);
-      verts.push(ax - nx, 0, az - nz, bs.alpha, 0);
-      verts.push(bx + nx, 0, bz + nz, bs.alpha, 0);
-      verts.push(bx - nx, 0, bz - nz, bs.alpha, 0);
+      verts.push(ax + nx, 0, az + nz, bi.alpha, 0);
+      verts.push(ax - nx, 0, az - nz, bi.alpha, 0);
+      verts.push(bx + nx, 0, bz + nz, bi.alpha, 0);
+      verts.push(bx - nx, 0, bz - nz, bi.alpha, 0);
       idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
     }
   }
 
   {
     const st = BORDER_STRIPES;
-    const h = BORDER_SQUARE.halfSize;
+    const d = st.distance;
     const hw = st.lineWidth / 2;
     const px = hw / Math.SQRT2;
     const pz = -px;
@@ -338,25 +386,30 @@ function generateRings() {
     const z1 = st.spanZ / 2;
 
     const regions = [
-      { x0: -h + st.inset, x1: -h + st.inset + st.regionWidth },
-      { x0: h - st.inset - st.regionWidth, x1: h - st.inset },
+      { x0: -d - st.regionWidth / 2, x1: -d + st.regionWidth / 2 },
+      { x0: d - st.regionWidth / 2, x1: d + st.regionWidth / 2 },
     ];
 
     for (const reg of regions) {
       const dMin = reg.x0 - z1;
       const dMax = reg.x1 - z0;
 
-      for (let d = dMin; d <= dMax; d += st.spacing) {
-        const xs = Math.max(reg.x0, z0 + d);
-        const xe = Math.min(reg.x1, z1 + d);
+      for (let dd = dMin; dd <= dMax; dd += st.spacing) {
+        const xs = Math.max(reg.x0, z0 + dd);
+        const xe = Math.min(reg.x1, z1 + dd);
         if (xs >= xe) continue;
-        const zs = xs - d;
-        const ze = xe - d;
+        const zs = xs - dd;
+        const ze = xe - dd;
+        const midX = (xs + xe) / 2;
+        const midZ = (zs + ze) / 2;
+        const dist = Math.sqrt(midX * midX + midZ * midZ);
+        const fade = 1.0 - Math.min(1.0, Math.max(0.0, (dist - 3.0) / 7.0));
+        const a = st.alpha * fade;
         const base = verts.length / STRIDE;
-        verts.push(xs + px, 0, zs + pz, st.alpha, 0);
-        verts.push(xs - px, 0, zs - pz, st.alpha, 0);
-        verts.push(xe + px, 0, ze + pz, st.alpha, 0);
-        verts.push(xe - px, 0, ze - pz, st.alpha, 0);
+        verts.push(xs + px, 0, zs + pz, a, 0);
+        verts.push(xs - px, 0, zs - pz, a, 0);
+        verts.push(xe + px, 0, ze + pz, a, 0);
+        verts.push(xe - px, 0, ze - pz, a, 0);
         idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
       }
     }
@@ -573,6 +626,7 @@ export const main = async () => {
     sceneUBO.write(sceneData);
 
     dofData[0] = BLOOM_INTENSITY;
+    dofData[1] = CA_STRENGTH;
     dofUBO.write(dofData);
 
     const bw = Math.floor(w / 2);
