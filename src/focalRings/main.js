@@ -2,7 +2,7 @@ import { chottoGPU } from 'chottogpu';
 import { FPSGraph } from '../libs/FPSGraph.js';
 import ringWGSL from './shaders/ring.wgsl?raw';
 import gridWGSL from './shaders/grid.wgsl?raw';
-import dofWGSL from './shaders/dof.wgsl?raw';
+import compositeWGSL from './shaders/composite.wgsl?raw';
 import bloomExtractWGSL from './shaders/bloomExtract.wgsl?raw';
 import blurWGSL from './shaders/blur.wgsl?raw';
 import sdfShapeWGSL from './shaders/sdfShape.wgsl?raw';
@@ -558,8 +558,8 @@ export const main = async () => {
   const sceneData = new Float32Array(24);
   const sceneUBO = gpu.buffer(sceneData, { uniform: true });
 
-  const dofData = new Float32Array(4);
-  const dofUBO = gpu.buffer(dofData, { uniform: true });
+  const compositeData = new Float32Array(4);
+  const compositeUBO = gpu.buffer(compositeData, { uniform: true });
 
 
   const ringColorPipe = gpu.pipeline({
@@ -624,9 +624,9 @@ export const main = async () => {
     },
   });
 
-  const dofPipe = gpu.pipeline({
+  const compositePipe = gpu.pipeline({
     vertex: gpu.FULLSCREEN_VERT,
-    fragment: dofWGSL,
+    fragment: compositeWGSL,
   });
 
   const bloomExtractPipe = gpu.pipeline({
@@ -663,7 +663,7 @@ export const main = async () => {
   });
 
 
-  const dofSampler = gpu.device.createSampler({
+  const compositeSampler = gpu.device.createSampler({
     magFilter: 'linear', minFilter: 'linear',
     addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge',
   });
@@ -673,7 +673,7 @@ export const main = async () => {
   const blurHUBO = gpu.buffer(blurHData, { uniform: true });
   const blurVUBO = gpu.buffer(blurVData, { uniform: true });
 
-  let dofBG;
+  let compositeBG;
   let extractBG, blurHBG, blurVBG;
 
   function updateUniforms(w, h, time) {
@@ -686,9 +686,9 @@ export const main = async () => {
     sceneData[20] = time;
     sceneUBO.write(sceneData);
 
-    dofData[0] = BLOOM_INTENSITY;
-    dofData[1] = CA_STRENGTH;
-    dofUBO.write(dofData);
+    compositeData[0] = BLOOM_INTENSITY;
+    compositeData[1] = CA_STRENGTH;
+    compositeUBO.write(compositeData);
 
     const bw = Math.floor(w / 2);
     const bh = Math.floor(h / 2);
@@ -702,7 +702,7 @@ export const main = async () => {
     extractBG = gpu.device.createBindGroup({
       layout: bloomExtractPipe.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: dofSampler },
+        { binding: 0, resource: compositeSampler },
         { binding: 1, resource: colorFBO.view },
       ],
     });
@@ -710,7 +710,7 @@ export const main = async () => {
     blurHBG = gpu.device.createBindGroup({
       layout: blurPipe.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: dofSampler },
+        { binding: 0, resource: compositeSampler },
         { binding: 1, resource: bloomA.view },
         { binding: 2, resource: { buffer: blurHUBO.buffer } },
       ],
@@ -719,19 +719,19 @@ export const main = async () => {
     blurVBG = gpu.device.createBindGroup({
       layout: blurPipe.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: dofSampler },
+        { binding: 0, resource: compositeSampler },
         { binding: 1, resource: bloomB.view },
         { binding: 2, resource: { buffer: blurVUBO.buffer } },
       ],
     });
 
-    dofBG = gpu.device.createBindGroup({
-      layout: dofPipe.getBindGroupLayout(0),
+    compositeBG = gpu.device.createBindGroup({
+      layout: compositePipe.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: dofSampler },
+        { binding: 0, resource: compositeSampler },
         { binding: 1, resource: colorFBO.view },
         { binding: 2, resource: bloomA.view },
-        { binding: 3, resource: { buffer: dofUBO.buffer } },
+        { binding: 3, resource: { buffer: compositeUBO.buffer } },
       ],
     });
   }
@@ -783,8 +783,8 @@ export const main = async () => {
       });
 
       gpu.pass((p) => {
-        p.setPipeline(dofPipe);
-        p.setBindGroup(0, dofBG);
+        p.setPipeline(compositePipe);
+        p.setBindGroup(0, compositeBG);
         p.draw(3);
       });
     });
