@@ -90,8 +90,8 @@ const BORDER_STRIPES = {
 };
 
 const GAUGE_CONFIGS = [
-  { centerDeg: -45, spanDeg: 46, innerR: 5.3, outerR: 5.9, tickProtrude: 0.12, tickWidth: 0.05 },
-  { centerDeg: 135, spanDeg: 46, innerR: 5.3, outerR: 5.9, tickProtrude: 0.12, tickWidth: 0.05 },
+  { centerDeg: 0, spanDeg: 46, innerR: 5.3, outerR: 5.9, tickGap: 0.05, tickLen: 0.14, tickWidth: 0.05 },
+  { centerDeg: 180, spanDeg: 46, innerR: 5.3, outerR: 5.9, tickGap: 0.05, tickLen: 0.14, tickWidth: 0.05 },
 ];
 const GAUGE_TRACK_ALPHA = 0.14;
 const GAUGE_FILL_ALPHA = 0.85;
@@ -480,8 +480,8 @@ function generateGauges() {
       const c = Math.cos(a), sn = Math.sin(a);
       const tx = -sn, tz = c;
       const hw = cfg.tickWidth / 2;
-      const rInner = cfg.innerR - cfg.tickProtrude;
-      const rOuter = cfg.outerR + cfg.tickProtrude;
+      const rInner = cfg.outerR + cfg.tickGap;
+      const rOuter = rInner + cfg.tickLen;
       const base = verts.length / STRIDE;
       verts.push(c * rInner + tx * hw, 0, sn * rInner + tz * hw, GAUGE_TICK_ALPHA, -1);
       verts.push(c * rInner - tx * hw, 0, sn * rInner - tz * hw, GAUGE_TICK_ALPHA, -1);
