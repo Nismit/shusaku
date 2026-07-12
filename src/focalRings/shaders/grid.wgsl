@@ -22,17 +22,25 @@ struct VOut {
 const GRID_SPACING: f32 = 2.0;
 const LINE_BASE_ALPHA: f32 = 0.12;
 const LINE_COLOR: vec3f = vec3f(0.35, 0.35, 0.35);
+const CROSS_RADIUS: f32 = 0.06;
+const CROSS_WIDTH_MULT: f32 = 4.0;
+const CROSS_ALPHA_MULT: f32 = 2.5;
 
 @fragment fn fs(v: VOut) -> @location(0) vec4f {
   let coord = v.worldPos.xz / GRID_SPACING;
   let grid = abs(fract(coord - 0.5) - 0.5);
   let line = min(grid.x, grid.y);
   let fw = fwidth(line);
-  let mask = 1.0 - smoothstep(0.0, fw * 1.5, line);
+
+  let interDist = max(grid.x, grid.y);
+  let crossFactor = 1.0 - smoothstep(0.0, CROSS_RADIUS, interDist);
+
+  let lineWidth = fw * 1.5 * mix(1.0, CROSS_WIDTH_MULT, crossFactor);
+  let mask = 1.0 - smoothstep(0.0, lineWidth, line);
 
   let dist = length(v.worldPos.xz);
   let fade = 1.0 - smoothstep(3.0, 10.0, dist);
 
-  let alpha = mask * LINE_BASE_ALPHA * fade;
+  let alpha = mask * LINE_BASE_ALPHA * mix(1.0, CROSS_ALPHA_MULT, crossFactor) * fade;
   return vec4f(LINE_COLOR, alpha);
 }
