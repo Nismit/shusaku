@@ -86,7 +86,7 @@ const BORDER_STRIPES = {
 
 const GRID_EXTENT = 12;
 
-const CAM_EYE = [10, 14, 10];
+const CAM_EYE = [10, 10, 10];
 const CAM_TARGET = [0, 0, 0];
 const FOV = 50 * Math.PI / 180;
 const NEAR = 0.1;
