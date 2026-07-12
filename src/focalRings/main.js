@@ -8,6 +8,7 @@ import blurWGSL from './shaders/blur.wgsl?raw';
 import sdfShapeWGSL from './shaders/sdfShape.wgsl?raw';
 import hexRunnerWGSL from './shaders/hexRunner.wgsl?raw';
 import gaugeWGSL from './shaders/gauge.wgsl?raw';
+import ringGaugeWGSL from './shaders/ringGauge.wgsl?raw';
 import { isMobile } from '../libs/DeviceDetect.js';
 
 const SEGMENTS = 128;
@@ -92,6 +93,10 @@ const BORDER_STRIPES = {
 const GRID_CORNER = {
   spacing: 2.0, extent: 12, gap: 0.06, arm: 0.22, thickness: 0.035, alpha: 0.55,
 };
+
+const OUTER_GAUGE_RING = { radius: 4.75, thickness: 0.08, gapDeg: 72 };
+const OUTER_GAUGE_RING_TRACK_ALPHA = 0.35;
+const OUTER_GAUGE_RING_FILL_ALPHA = 0.9;
 
 const GAUGE_CONFIGS = [
   { centerDeg: 240, spanDeg: 64, innerR: 5.45, outerR: 5.75, tickGap: 0.05, tickLen: 0.14, tickWidth: 0.05 },
@@ -540,6 +545,53 @@ function generateGauges() {
   };
 }
 
+function generateOuterGaugeRing() {
+  const cfg = OUTER_GAUGE_RING;
+  const verts = [];
+  const idxs = [];
+  const STRIDE = 5;
+
+  const innerR = cfg.radius - cfg.thickness / 2;
+  const outerR = cfg.radius + cfg.thickness / 2;
+  const arcSpan = (360 - cfg.gapDeg) * Math.PI / 180;
+  const startA = (cfg.gapDeg / 2) * Math.PI / 180;
+  const segs = Math.max(32, Math.ceil(arcSpan * ARC_SEGS_PER_RAD));
+
+  {
+    const base = verts.length / STRIDE;
+    for (let s = 0; s <= segs; s++) {
+      const a = startA + (s / segs) * arcSpan;
+      const c = Math.cos(a), sn = Math.sin(a);
+      verts.push(c * innerR, 0, sn * innerR, OUTER_GAUGE_RING_TRACK_ALPHA, -1);
+      verts.push(c * outerR, 0, sn * outerR, OUTER_GAUGE_RING_TRACK_ALPHA, -1);
+    }
+    for (let s = 0; s < segs; s++) {
+      const a = base + s * 2, b = a + 1, c = a + 2, d = a + 3;
+      idxs.push(a, c, b, b, c, d);
+    }
+  }
+
+  {
+    const base = verts.length / STRIDE;
+    for (let s = 0; s <= segs; s++) {
+      const param = s / segs;
+      const a = startA + param * arcSpan;
+      const c = Math.cos(a), sn = Math.sin(a);
+      verts.push(c * innerR, 0, sn * innerR, OUTER_GAUGE_RING_FILL_ALPHA, param);
+      verts.push(c * outerR, 0, sn * outerR, OUTER_GAUGE_RING_FILL_ALPHA, param);
+    }
+    for (let s = 0; s < segs; s++) {
+      const a = base + s * 2, b = a + 1, c = a + 2, d = a + 3;
+      idxs.push(a, c, b, b, c, d);
+    }
+  }
+
+  return {
+    positions: new Float32Array(verts),
+    indices: new Uint16Array(idxs),
+  };
+}
+
 function generateGrid() {
   const e = GRID_EXTENT;
   const verts = [
@@ -667,6 +719,11 @@ export const main = async () => {
   const gaugeIB = gpu.buffer(gauges.indices, { index: true });
   const gaugeIdxCount = gauges.indices.length;
 
+  const outerGaugeRing = generateOuterGaugeRing();
+  const outerGaugeRingVB = gpu.buffer(outerGaugeRing.positions, { vertex: true });
+  const outerGaugeRingIB = gpu.buffer(outerGaugeRing.indices, { index: true });
+  const outerGaugeRingIdxCount = outerGaugeRing.indices.length;
+
   const vertexLayout = [{
     arrayStride: 20,
     attributes: [
@@ -760,6 +817,21 @@ export const main = async () => {
     },
   });
 
+  const ringGaugePipe = gpu.pipeline({
+    vertex: ringGaugeWGSL,
+    fragment: ringGaugeWGSL,
+    format: RENDER_FORMAT,
+    vertexBuffers: vertexLayout,
+    depthTest: true,
+    depthWrite: false,
+    cullMode: 'none',
+    samples: MSAA,
+    blend: {
+      color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+      alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+    },
+  });
+
   const compositePipe = gpu.pipeline({
     vertex: gpu.FULLSCREEN_VERT,
     fragment: compositeWGSL,
@@ -800,6 +872,11 @@ export const main = async () => {
 
   const gaugeBG = gpu.device.createBindGroup({
     layout: gaugePipe.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
+  });
+
+  const ringGaugeBG = gpu.device.createBindGroup({
+    layout: ringGaugePipe.getBindGroupLayout(0),
     entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
   });
 
@@ -891,6 +968,12 @@ export const main = async () => {
         p.setVertexBuffer(0, vertexBuffer.buffer);
         p.setIndexBuffer(indexBuffer.buffer, 'uint16');
         p.drawIndexed(indexCount);
+
+        p.setPipeline(ringGaugePipe);
+        p.setBindGroup(0, ringGaugeBG);
+        p.setVertexBuffer(0, outerGaugeRingVB.buffer);
+        p.setIndexBuffer(outerGaugeRingIB.buffer, 'uint16');
+        p.drawIndexed(outerGaugeRingIdxCount);
 
         p.setPipeline(hexRunnerPipe);
         p.setBindGroup(0, hexRunnerBG);
