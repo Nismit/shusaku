@@ -89,5 +89,6 @@ const SURF_DIST: f32 = 0.001;
   let col = mix(vec3f(0.9), rainbow, prismStrength) + spec * 0.8 + spec2 * 0.4;
   let alpha = 0.08 + edge * 0.5 + spec * 0.6 + spec2 * 0.3 + prismStrength * 0.3;
 
-  return vec4f(col, saturate(alpha));
+  const BLOOM_BOOST: f32 = 1.8;
+  return vec4f(col * BLOOM_BOOST, saturate(alpha));
 }
