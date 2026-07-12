@@ -7,6 +7,7 @@ import bloomExtractWGSL from './shaders/bloomExtract.wgsl?raw';
 import blurWGSL from './shaders/blur.wgsl?raw';
 import sdfShapeWGSL from './shaders/sdfShape.wgsl?raw';
 import hexRunnerWGSL from './shaders/hexRunner.wgsl?raw';
+import { isMobile } from '../libs/DeviceDetect.js';
 
 const SEGMENTS = 128;
 const LAYER_THICKNESS = [0.05, 0.14];
@@ -89,7 +90,8 @@ const BORDER_STRIPES = {
 
 const GRID_EXTENT = 12;
 
-const CAM_EYE = [10, 10, 10];
+const CAM_DISTANCE_SCALE = isMobile() ? 1.35 : 1.0;
+const CAM_EYE = [10 * CAM_DISTANCE_SCALE, 10 * CAM_DISTANCE_SCALE, 10 * CAM_DISTANCE_SCALE];
 const CAM_TARGET = [0, 0, 0];
 const FOV = 50 * Math.PI / 180;
 const NEAR = 0.1;
