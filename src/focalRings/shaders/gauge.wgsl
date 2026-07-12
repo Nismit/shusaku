@@ -3,6 +3,7 @@ struct Uniforms {
   cameraPos: vec3f,
   farPlane: f32,
   time: f32,
+  kick: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -31,7 +32,8 @@ const EDGE_WIDTH: f32 = 0.04;
     return vec4f(1.0, 1.0, 1.0, v.alpha);
   }
 
-  let level = 0.5 + 0.42 * sin(u.time * GAUGE_SPEED + v.phase);
+  let baseLevel = 0.5 + 0.42 * sin(u.time * GAUGE_SPEED + v.phase);
+  let level = mix(baseLevel, 0.95, u.kick);
   let d = v.param - level;
   if (d > EDGE_WIDTH) { discard; }
 
