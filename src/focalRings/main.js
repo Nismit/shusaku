@@ -90,7 +90,7 @@ const BORDER_STRIPES = {
 
 const GRID_EXTENT = 12;
 
-const CAM_DISTANCE_SCALE = isMobile() ? 1.35 : 1.0;
+const CAM_DISTANCE_SCALE = isMobile() ? 1.7 : 1.0;
 const CAM_EYE = [10 * CAM_DISTANCE_SCALE, 10 * CAM_DISTANCE_SCALE, 10 * CAM_DISTANCE_SCALE];
 const CAM_TARGET = [0, 0, 0];
 const FOV = 50 * Math.PI / 180;
