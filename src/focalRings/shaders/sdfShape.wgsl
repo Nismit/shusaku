@@ -3,6 +3,7 @@ struct Uniforms {
   cameraPos: vec3f,
   farPlane: f32,
   time: f32,
+  kick: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -35,7 +36,7 @@ fn sdfScene(p: vec3f) -> f32 {
   let spin = rot2(u.time * 0.6, rp.xz);
   rp = vec3f(spin.x, rp.y, spin.y);
   rp.y *= 0.7;
-  return sdOctahedron(rp, 1.8);
+  return sdOctahedron(rp, 1.8 + u.kick * 0.3);
 }
 
 fn calcNormal(p: vec3f) -> vec3f {
@@ -94,5 +95,6 @@ const SURF_DIST: f32 = 0.001;
   let col = luma + (baseCol - luma) * SATURATION_BOOST;
 
   const BLOOM_BOOST: f32 = 1.8;
-  return vec4f(col * BLOOM_BOOST, saturate(alpha));
+  let flash = 1.0 + u.kick * 1.3;
+  return vec4f(col * BLOOM_BOOST * flash, saturate(alpha));
 }

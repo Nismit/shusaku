@@ -10,6 +10,7 @@ import hexRunnerWGSL from './shaders/hexRunner.wgsl?raw';
 import gaugeWGSL from './shaders/gauge.wgsl?raw';
 import ringGaugeWGSL from './shaders/ringGauge.wgsl?raw';
 import { isMobile } from '../libs/DeviceDetect.js';
+import { PointerInput } from '../libs/PointerInput.js';
 
 const SEGMENTS = 128;
 const LAYER_THICKNESS = [0.05, 0.14];
@@ -118,6 +119,7 @@ const RENDER_FORMAT = 'rgba16float';
 const BLOOM_SPREAD = 2.5;
 const BLOOM_INTENSITY = 0.35;
 const CA_STRENGTH = 0.03;
+const KICK_DECAY = 2.5;
 
 function lookAt(eye, center, up) {
   const out = new Float32Array(16);
@@ -685,6 +687,12 @@ export const main = async () => {
   const fpsGraph = new FPSGraph();
   const gpu = await chottoGPU(canvas);
 
+  let lastKickTime = -Infinity;
+  const pointer = new PointerInput(canvas);
+  pointer.onClick(() => {
+    lastKickTime = performance.now();
+  });
+
   let colorFBO = gpu.framebuffer(canvas.width, canvas.height, {
     format: RENDER_FORMAT, depth: true, samples: MSAA,
   });
@@ -902,6 +910,8 @@ export const main = async () => {
     sceneData[18] = CAM_EYE[2];
     sceneData[19] = FAR;
     sceneData[20] = time;
+    const kickElapsed = (performance.now() - lastKickTime) / 1000;
+    sceneData[21] = Math.exp(-kickElapsed * KICK_DECAY);
     sceneUBO.write(sceneData);
 
     compositeData[0] = BLOOM_INTENSITY;
@@ -1034,6 +1044,7 @@ export const main = async () => {
     updateUniforms(canvas.width, canvas.height, time);
     render();
     fpsGraph.update();
+    pointer.update();
     requestAnimationFrame(loop);
   };
   loop();
