@@ -90,8 +90,7 @@ const BORDER_STRIPES = {
 };
 
 const GAUGE_CONFIGS = [
-  { centerDeg: 0, spanDeg: 46, innerR: 5.3, outerR: 5.9, tickGap: 0.05, tickLen: 0.14, tickWidth: 0.05 },
-  { centerDeg: 180, spanDeg: 46, innerR: 5.3, outerR: 5.9, tickGap: 0.05, tickLen: 0.14, tickWidth: 0.05 },
+  { centerDeg: 225, spanDeg: 64, innerR: 5.45, outerR: 5.75, tickGap: 0.05, tickLen: 0.14, tickWidth: 0.05 },
 ];
 const GAUGE_TRACK_ALPHA = 0.14;
 const GAUGE_FILL_ALPHA = 0.85;
