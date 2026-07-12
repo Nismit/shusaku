@@ -89,6 +89,10 @@ const BORDER_STRIPES = {
   spacing: 0.28, lineWidth: 0.07, alpha: 0.15,
 };
 
+const GRID_CORNER = {
+  spacing: 2.0, extent: 12, gap: 0.06, arm: 0.22, thickness: 0.035, alpha: 0.55,
+};
+
 const GAUGE_CONFIGS = [
   { centerDeg: 240, spanDeg: 64, innerR: 5.45, outerR: 5.75, tickGap: 0.05, tickLen: 0.14, tickWidth: 0.05 },
 ];
@@ -424,6 +428,46 @@ function generateRings() {
         verts.push(xe + px, 0, ze + pz, a, 0);
         verts.push(xe - px, 0, ze - pz, a, 0);
         idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+      }
+    }
+  }
+
+  {
+    const gc = GRID_CORNER;
+    const halfT = gc.thickness / 2;
+
+    for (let ix = -gc.extent; ix <= gc.extent; ix += gc.spacing) {
+      for (let iz = -gc.extent; iz <= gc.extent; iz += gc.spacing) {
+        const dist = Math.sqrt(ix * ix + iz * iz);
+        const fade = 1.0 - Math.min(1.0, Math.max(0.0, (dist - 3.0) / 7.0));
+        if (fade <= 0.001) continue;
+        const alpha = gc.alpha * fade;
+
+        for (const sx of [-1, 1]) {
+          for (const sz of [-1, 1]) {
+            const cx = ix + sx * gc.gap;
+            const cz = iz + sz * gc.gap;
+            const ex = cx + sx * gc.arm;
+            const ez = cz + sz * gc.arm;
+
+            {
+              const base = verts.length / STRIDE;
+              verts.push(cx, 0, cz - halfT, alpha, 0);
+              verts.push(cx, 0, cz + halfT, alpha, 0);
+              verts.push(ex, 0, cz - halfT, alpha, 0);
+              verts.push(ex, 0, cz + halfT, alpha, 0);
+              idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+            }
+            {
+              const base = verts.length / STRIDE;
+              verts.push(cx - halfT, 0, cz, alpha, 0);
+              verts.push(cx + halfT, 0, cz, alpha, 0);
+              verts.push(cx - halfT, 0, ez, alpha, 0);
+              verts.push(cx + halfT, 0, ez, alpha, 0);
+              idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+            }
+          }
+        }
       }
     }
   }
