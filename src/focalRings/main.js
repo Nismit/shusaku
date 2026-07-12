@@ -911,10 +911,11 @@ export const main = async () => {
     sceneData[19] = FAR;
     sceneData[20] = time;
     const kickElapsed = (performance.now() - lastKickTime) / 1000;
-    sceneData[21] = Math.exp(-kickElapsed * KICK_DECAY);
+    const kick = Math.exp(-kickElapsed * KICK_DECAY);
+    sceneData[21] = kick;
     sceneUBO.write(sceneData);
 
-    compositeData[0] = BLOOM_INTENSITY;
+    compositeData[0] = BLOOM_INTENSITY + kick * 0.7;
     compositeData[1] = CA_STRENGTH;
     compositeUBO.write(compositeData);
 

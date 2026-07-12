@@ -29,11 +29,11 @@ const EDGE_WIDTH: f32 = 0.04;
 
 @fragment fn fs(v: VOut) -> @location(0) vec4f {
   if (v.param < 0.0) {
-    return vec4f(1.0, 1.0, 1.0, v.alpha);
+    return vec4f(1.0, 1.0, 1.0, saturate(v.alpha + u.kick * 0.7));
   }
 
   let baseLevel = 0.5 + 0.42 * sin(u.time * GAUGE_SPEED + v.phase);
-  let level = mix(baseLevel, 0.95, u.kick);
+  let level = mix(baseLevel, 1.0, u.kick);
   let d = v.param - level;
   if (d > EDGE_WIDTH) { discard; }
 

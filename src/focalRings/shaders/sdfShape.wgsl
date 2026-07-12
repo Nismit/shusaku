@@ -36,7 +36,7 @@ fn sdfScene(p: vec3f) -> f32 {
   let spin = rot2(u.time * 0.6, rp.xz);
   rp = vec3f(spin.x, rp.y, spin.y);
   rp.y *= 0.7;
-  return sdOctahedron(rp, 1.8 + u.kick * 0.3);
+  return sdOctahedron(rp, 1.8 + u.kick * 0.6);
 }
 
 fn calcNormal(p: vec3f) -> vec3f {
