@@ -24,8 +24,8 @@ const LINE_BASE_ALPHA: f32 = 0.12;
 const LINE_COLOR: vec3f = vec3f(0.35, 0.35, 0.35);
 const CROSS_RADIUS: f32 = 0.1;
 const CROSS_WIDTH_MULT: f32 = 7.0;
-const CROSS_ALPHA_MULT: f32 = 5.0;
-const CROSS_COLOR: vec3f = vec3f(0.9, 0.9, 0.9);
+const CROSS_ALPHA_MULT: f32 = 3.0;
+const CROSS_COLOR: vec3f = vec3f(0.7, 0.7, 0.7);
 
 @fragment fn fs(v: VOut) -> @location(0) vec4f {
   let coord = v.worldPos.xz / GRID_SPACING;
