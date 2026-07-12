@@ -6,6 +6,7 @@ import dofWGSL from './shaders/dof.wgsl?raw';
 import bloomExtractWGSL from './shaders/bloomExtract.wgsl?raw';
 import blurWGSL from './shaders/blur.wgsl?raw';
 import sdfShapeWGSL from './shaders/sdfShape.wgsl?raw';
+import hexRunnerWGSL from './shaders/hexRunner.wgsl?raw';
 
 const SEGMENTS = 128;
 const LAYER_THICKNESS = [0.05, 0.14];
@@ -80,6 +81,7 @@ const STRIPE_ARC_CONFIGS = [
 
 const BORDER_HEX = { radius: 7.5, thickness: 0.06, alpha: 0.9, cornerLen: 1.2, thickEdges: [4], thickScale: 3.0 };
 const BORDER_HEX_INNER = { radius: 7.1, thickness: 0.04, alpha: 0.1 };
+const BORDER_HEX_RUNNER = { radius: 7.3, thickness: 0.04 };
 const BORDER_STRIPES = {
   distance: 9.5, regionWidth: 0.5, spanZ: 10.2,
   spacing: 0.28, lineWidth: 0.07, alpha: 0.15,
@@ -376,6 +378,7 @@ function generateRings() {
     }
   }
 
+
   {
     const st = BORDER_STRIPES;
     const d = st.distance;
@@ -436,6 +439,39 @@ function generateGrid() {
   };
 }
 
+
+function generateHexRunner() {
+  const hr = BORDER_HEX_RUNNER;
+  const r = hr.radius;
+  const t = hr.thickness / 2;
+  const STRIDE = 5;
+  const verts = [];
+  const idxs = [];
+  const corners = [];
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 3 * i - Math.PI / 6;
+    corners.push([Math.cos(a) * r, Math.sin(a) * r]);
+  }
+  for (let i = 0; i < 6; i++) {
+    const [ax, az] = corners[i];
+    const [bx, bz] = corners[(i + 1) % 6];
+    const dx = bx - ax, dz = bz - az;
+    const len = Math.sqrt(dx * dx + dz * dz);
+    const nx = -dz / len * t, nz = dx / len * t;
+    const paramA = i / 6;
+    const paramB = (i + 1) / 6;
+    const base = verts.length / STRIDE;
+    verts.push(ax + nx, 0, az + nz, paramA, 0);
+    verts.push(ax - nx, 0, az - nz, paramA, 0);
+    verts.push(bx + nx, 0, bz + nz, paramB, 0);
+    verts.push(bx - nx, 0, bz - nz, paramB, 0);
+    idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+  }
+  return {
+    positions: new Float32Array(verts),
+    indices: new Uint16Array(idxs),
+  };
+}
 
 function generateSDFBox() {
   const h = SDF_BOX_XZ;
@@ -505,6 +541,11 @@ export const main = async () => {
   const sdfBoxIB = gpu.buffer(sdfBox.indices, { index: true });
   const sdfBoxIdxCount = sdfBox.indices.length;
 
+  const hexRunner = generateHexRunner();
+  const hexRunnerVB = gpu.buffer(hexRunner.positions, { vertex: true });
+  const hexRunnerIB = gpu.buffer(hexRunner.indices, { index: true });
+  const hexRunnerIdxCount = hexRunner.indices.length;
+
   const vertexLayout = [{
     arrayStride: 20,
     attributes: [
@@ -568,6 +609,21 @@ export const main = async () => {
     },
   });
 
+  const hexRunnerPipe = gpu.pipeline({
+    vertex: hexRunnerWGSL,
+    fragment: hexRunnerWGSL,
+    format: RENDER_FORMAT,
+    vertexBuffers: vertexLayout,
+    depthTest: true,
+    depthWrite: false,
+    cullMode: 'none',
+    samples: MSAA,
+    blend: {
+      color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+      alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+    },
+  });
+
   const dofPipe = gpu.pipeline({
     vertex: gpu.FULLSCREEN_VERT,
     fragment: dofWGSL,
@@ -593,6 +649,11 @@ export const main = async () => {
 
   const gridBG = gpu.device.createBindGroup({
     layout: gridColorPipe.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
+  });
+
+  const hexRunnerBG = gpu.device.createBindGroup({
+    layout: hexRunnerPipe.getBindGroupLayout(0),
     entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
   });
 
@@ -689,6 +750,12 @@ export const main = async () => {
         p.setVertexBuffer(0, vertexBuffer.buffer);
         p.setIndexBuffer(indexBuffer.buffer, 'uint16');
         p.drawIndexed(indexCount);
+
+        p.setPipeline(hexRunnerPipe);
+        p.setBindGroup(0, hexRunnerBG);
+        p.setVertexBuffer(0, hexRunnerVB.buffer);
+        p.setIndexBuffer(hexRunnerIB.buffer, 'uint16');
+        p.drawIndexed(hexRunnerIdxCount);
 
         p.setPipeline(sdfColorPipe);
         p.setBindGroup(0, sdfColorBG);
