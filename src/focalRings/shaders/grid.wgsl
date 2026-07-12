@@ -36,8 +36,9 @@ const CROSS_COLOR: vec3f = vec3f(0.7, 0.7, 0.7);
   let interDist = max(grid.x, grid.y);
   let crossFactor = 1.0 - smoothstep(0.0, CROSS_RADIUS, interDist);
 
-  let lineWidth = fw * 1.5 * mix(1.0, CROSS_WIDTH_MULT, crossFactor);
-  let mask = 1.0 - smoothstep(0.0, lineWidth, line);
+  let aaWidth = fw * 1.5;
+  let lineWidth = aaWidth * mix(1.0, CROSS_WIDTH_MULT, crossFactor);
+  let mask = 1.0 - smoothstep(max(lineWidth - aaWidth, 0.0), lineWidth, line);
 
   let dist = length(v.worldPos.xz);
   let fade = 1.0 - smoothstep(3.0, 10.0, dist);
