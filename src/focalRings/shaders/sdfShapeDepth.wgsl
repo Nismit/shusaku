@@ -31,11 +31,11 @@ fn sdOctahedron(p: vec3f, s: f32) -> f32 {
 }
 
 fn sdfScene(p: vec3f) -> f32 {
-  var rp = p - vec3f(0.0, 2.0, 0.0);
-  let r45 = rot2(0.7854, rp.xz);
-  rp = vec3f(r45.x, rp.y, r45.y);
-  rp.y *= 0.55;
-  return sdOctahedron(rp, 1.8) / 0.55;
+  var rp = p - vec3f(-0.8, 2.0, -0.8);
+  let spin = rot2(u.time * 0.5, rp.xz);
+  rp = vec3f(spin.x, rp.y, spin.y);
+  rp.y *= 0.7;
+  return sdOctahedron(rp, 1.8);
 }
 
 const MAX_STEPS: i32 = 80;

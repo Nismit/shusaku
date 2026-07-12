@@ -1,13 +1,11 @@
 import { chottoGPU } from 'chottogpu';
 import { FPSGraph } from '../libs/FPSGraph.js';
 import ringWGSL from './shaders/ring.wgsl?raw';
-import ringDepthWGSL from './shaders/ringDepth.wgsl?raw';
 import gridWGSL from './shaders/grid.wgsl?raw';
 import dofWGSL from './shaders/dof.wgsl?raw';
 import bloomExtractWGSL from './shaders/bloomExtract.wgsl?raw';
 import blurWGSL from './shaders/blur.wgsl?raw';
 import sdfShapeWGSL from './shaders/sdfShape.wgsl?raw';
-import sdfShapeDepthWGSL from './shaders/sdfShapeDepth.wgsl?raw';
 
 const SEGMENTS = 128;
 const LAYER_THICKNESS = [0.05, 0.14];
@@ -95,9 +93,6 @@ const NEAR = 0.1;
 const FAR = 50.0;
 const MSAA = 4;
 const RENDER_FORMAT = 'rgba16float';
-const DEPTH_TEX_FORMAT = 'r16float';
-const DOF_APERTURE = 4.0;
-const DOF_MAX_BLUR = 10.0;
 const BLOOM_SPREAD = 2.5;
 const BLOOM_INTENSITY = 0.35;
 
@@ -436,9 +431,6 @@ export const main = async () => {
   let colorFBO = gpu.framebuffer(canvas.width, canvas.height, {
     format: RENDER_FORMAT, depth: true, samples: MSAA,
   });
-  let depthFBO = gpu.framebuffer(canvas.width, canvas.height, {
-    format: DEPTH_TEX_FORMAT, depth: true,
-  });
 
   let bloomW = Math.floor(canvas.width / 2);
   let bloomH = Math.floor(canvas.height / 2);
@@ -472,14 +464,9 @@ export const main = async () => {
   const sceneData = new Float32Array(24);
   const sceneUBO = gpu.buffer(sceneData, { uniform: true });
 
-  const dofData = new Float32Array(8);
+  const dofData = new Float32Array(4);
   const dofUBO = gpu.buffer(dofData, { uniform: true });
 
-  const focalDist = Math.sqrt(
-    (CAM_EYE[0] - CAM_TARGET[0]) ** 2 +
-    (CAM_EYE[1] - CAM_TARGET[1]) ** 2 +
-    (CAM_EYE[2] - CAM_TARGET[2]) ** 2
-  );
 
   const ringColorPipe = gpu.pipeline({
     vertex: ringWGSL,
@@ -496,14 +483,6 @@ export const main = async () => {
     },
   });
 
-  const ringDepthPipe = gpu.pipeline({
-    vertex: ringDepthWGSL,
-    fragment: ringDepthWGSL,
-    format: DEPTH_TEX_FORMAT,
-    vertexBuffers: vertexLayout,
-    depthTest: true,
-    cullMode: 'none',
-  });
 
   const sdfColorPipe = gpu.pipeline({
     vertex: sdfShapeWGSL,
@@ -511,19 +490,15 @@ export const main = async () => {
     format: RENDER_FORMAT,
     vertexBuffers: vertexLayout,
     depthTest: true,
-    depthWrite: true,
+    depthWrite: false,
     cullMode: 'back',
     samples: MSAA,
+    blend: {
+      color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+      alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+    },
   });
 
-  const sdfDepthPipe = gpu.pipeline({
-    vertex: sdfShapeDepthWGSL,
-    fragment: sdfShapeDepthWGSL,
-    format: DEPTH_TEX_FORMAT,
-    vertexBuffers: vertexLayout,
-    depthTest: true,
-    cullMode: 'back',
-  });
 
   const gridColorPipe = gpu.pipeline({
     vertex: gridWGSL,
@@ -562,10 +537,6 @@ export const main = async () => {
     entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
   });
 
-  const depthBG = gpu.device.createBindGroup({
-    layout: ringDepthPipe.getBindGroupLayout(0),
-    entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
-  });
 
   const gridBG = gpu.device.createBindGroup({
     layout: gridColorPipe.getBindGroupLayout(0),
@@ -577,10 +548,6 @@ export const main = async () => {
     entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
   });
 
-  const sdfDepthBG = gpu.device.createBindGroup({
-    layout: sdfDepthPipe.getBindGroupLayout(0),
-    entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
-  });
 
   const dofSampler = gpu.device.createSampler({
     magFilter: 'linear', minFilter: 'linear',
@@ -605,12 +572,7 @@ export const main = async () => {
     sceneData[20] = time;
     sceneUBO.write(sceneData);
 
-    dofData[0] = w;
-    dofData[1] = h;
-    dofData[2] = focalDist / FAR;
-    dofData[3] = DOF_APERTURE;
-    dofData[4] = DOF_MAX_BLUR;
-    dofData[5] = BLOOM_INTENSITY;
+    dofData[0] = BLOOM_INTENSITY;
     dofUBO.write(dofData);
 
     const bw = Math.floor(w / 2);
@@ -653,35 +615,14 @@ export const main = async () => {
       entries: [
         { binding: 0, resource: dofSampler },
         { binding: 1, resource: colorFBO.view },
-        { binding: 2, resource: depthFBO.view },
+        { binding: 2, resource: bloomA.view },
         { binding: 3, resource: { buffer: dofUBO.buffer } },
-        { binding: 4, resource: bloomA.view },
       ],
     });
   }
 
   function render() {
     gpu.frame(() => {
-      gpu.pass({ target: depthFBO, clear: [1, 0, 0, 1] }, (p) => {
-        p.setPipeline(ringDepthPipe);
-        p.setBindGroup(0, depthBG);
-        p.setVertexBuffer(0, gridVB.buffer);
-        p.setIndexBuffer(gridIB.buffer, 'uint16');
-        p.drawIndexed(gridIdxCount);
-
-        p.setPipeline(sdfDepthPipe);
-        p.setBindGroup(0, sdfDepthBG);
-        p.setVertexBuffer(0, sdfBoxVB.buffer);
-        p.setIndexBuffer(sdfBoxIB.buffer, 'uint16');
-        p.drawIndexed(sdfBoxIdxCount);
-
-        p.setPipeline(ringDepthPipe);
-        p.setBindGroup(0, depthBG);
-        p.setVertexBuffer(0, vertexBuffer.buffer);
-        p.setIndexBuffer(indexBuffer.buffer, 'uint16');
-        p.drawIndexed(indexCount);
-      });
-
       gpu.pass({ target: colorFBO, clear: [0, 0, 0, 1] }, (p) => {
         p.setPipeline(gridColorPipe);
         p.setBindGroup(0, gridBG);
@@ -689,17 +630,17 @@ export const main = async () => {
         p.setIndexBuffer(gridIB.buffer, 'uint16');
         p.drawIndexed(gridIdxCount);
 
-        p.setPipeline(sdfColorPipe);
-        p.setBindGroup(0, sdfColorBG);
-        p.setVertexBuffer(0, sdfBoxVB.buffer);
-        p.setIndexBuffer(sdfBoxIB.buffer, 'uint16');
-        p.drawIndexed(sdfBoxIdxCount);
-
         p.setPipeline(ringColorPipe);
         p.setBindGroup(0, colorBG);
         p.setVertexBuffer(0, vertexBuffer.buffer);
         p.setIndexBuffer(indexBuffer.buffer, 'uint16');
         p.drawIndexed(indexCount);
+
+        p.setPipeline(sdfColorPipe);
+        p.setBindGroup(0, sdfColorBG);
+        p.setVertexBuffer(0, sdfBoxVB.buffer);
+        p.setIndexBuffer(sdfBoxIB.buffer, 'uint16');
+        p.drawIndexed(sdfBoxIdxCount);
       });
 
       gpu.pass({ target: bloomA, clear: [0, 0, 0, 1] }, (p) => {
@@ -730,7 +671,6 @@ export const main = async () => {
 
   gpu.fitWindow((w, h) => {
     colorFBO.resize(w, h);
-    depthFBO.resize(w, h);
     bloomW = Math.floor(w / 2);
     bloomH = Math.floor(h / 2);
     bloomA.resize(bloomW, bloomH);

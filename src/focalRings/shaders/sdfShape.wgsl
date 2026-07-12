@@ -31,11 +31,11 @@ fn sdOctahedron(p: vec3f, s: f32) -> f32 {
 }
 
 fn sdfScene(p: vec3f) -> f32 {
-  var rp = p - vec3f(0.0, 2.0, 0.0);
-  let r45 = rot2(0.7854, rp.xz);
-  rp = vec3f(r45.x, rp.y, r45.y);
-  rp.y *= 0.55;
-  return sdOctahedron(rp, 1.8) / 0.55;
+  var rp = p - vec3f(-0.8, 2.0, -0.8);
+  let spin = rot2(u.time * 0.5, rp.xz);
+  rp = vec3f(spin.x, rp.y, spin.y);
+  rp.y *= 0.7;
+  return sdOctahedron(rp, 1.8);
 }
 
 fn calcNormal(p: vec3f) -> vec3f {
@@ -68,10 +68,26 @@ const SURF_DIST: f32 = 0.001;
   if (sdfScene(hitPos) > SURF_DIST) { discard; }
 
   let n = calcNormal(hitPos);
+  let V = -rd;
   let lightDir = normalize(vec3f(0.5, 1.0, 0.3));
-  let diff = max(dot(n, lightDir), 0.0);
-  let rim = pow(1.0 - max(dot(n, -rd), 0.0), 2.5);
-  let lum = 0.35 + diff * 0.5 + rim * 0.25;
+  let H = normalize(lightDir + V);
 
-  return vec4f(vec3f(lum), 1.0);
+  let fresnel = pow(1.0 - max(dot(n, V), 0.0), 3.0);
+  let spec = pow(max(dot(n, H), 0.0), 80.0);
+  let spec2 = pow(max(dot(n, normalize(vec3f(-0.3, 0.8, -0.5) + V)), 0.0), 60.0);
+
+  let R = reflect(rd, n);
+  let dispersion = dot(R, vec3f(0.7, 0.3, -0.5));
+  let rainbow = vec3f(
+    smoothstep(-0.3, 0.4, sin(dispersion * 4.0 + 0.0)),
+    smoothstep(-0.3, 0.4, sin(dispersion * 4.0 + 2.1)),
+    smoothstep(-0.3, 0.4, sin(dispersion * 4.0 + 4.2)),
+  );
+  let prismStrength = fresnel * 0.6;
+
+  let edge = smoothstep(0.0, 0.4, fresnel);
+  let col = mix(vec3f(0.9), rainbow, prismStrength) + spec * 0.8 + spec2 * 0.4;
+  let alpha = 0.08 + edge * 0.5 + spec * 0.6 + spec2 * 0.3 + prismStrength * 0.3;
+
+  return vec4f(col, saturate(alpha));
 }
