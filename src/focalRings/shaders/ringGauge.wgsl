@@ -13,7 +13,7 @@ struct VOut {
   @location(1) param: f32,
 };
 
-const ROTATE_SPEED: f32 = 0.08;
+const ROTATE_SPEED: f32 = 0.12;
 
 @vertex fn vs(@location(0) pos: vec3f, @location(1) alpha: f32, @location(2) param: f32) -> VOut {
   let angle = u.time * ROTATE_SPEED;
