@@ -688,6 +688,8 @@ export const main = async () => {
   const gpu = await chottoGPU(canvas);
 
   let lastKickTime = -Infinity;
+  let rotBoostAccum = 0;
+  let prevUniformTime = 0;
   const pointer = new PointerInput(canvas);
   pointer.onClick(() => {
     lastKickTime = performance.now();
@@ -912,7 +914,11 @@ export const main = async () => {
     sceneData[20] = time;
     const kickElapsed = (performance.now() - lastKickTime) / 1000;
     const kick = Math.exp(-kickElapsed * KICK_DECAY);
+    const dt = Math.max(0, time - prevUniformTime);
+    prevUniformTime = time;
+    rotBoostAccum += kick * dt;
     sceneData[21] = kick;
+    sceneData[22] = rotBoostAccum;
     sceneUBO.write(sceneData);
 
     compositeData[0] = BLOOM_INTENSITY + kick * 0.7;

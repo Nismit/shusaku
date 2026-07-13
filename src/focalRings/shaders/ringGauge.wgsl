@@ -4,6 +4,7 @@ struct Uniforms {
   farPlane: f32,
   time: f32,
   kick: f32,
+  rotBoost: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -16,15 +17,13 @@ struct VOut {
 
 const ROTATE_SPEED: f32 = 0.12;
 
-// See ring.wgsl for the derivation: (1 - kick) / KICK_DECAY is the closed-form
-// integral of the exponentially-decaying kick, giving a smooth accelerate-
-// then-settle boost to the rotation with no jump in angle or velocity.
-const KICK_DECAY: f32 = 2.5;
+// See ring.wgsl for the derivation: rotBoost is a CPU-accumulated running
+// integral of kick (+= kick*dt each frame), so it never resets on a
+// retrigger - it just keeps growing, keeping the rotation continuous.
 const ROT_BOOST: f32 = 3.0;
 
 @vertex fn vs(@location(0) pos: vec3f, @location(1) alpha: f32, @location(2) param: f32) -> VOut {
-  let kickIntegral = (1.0 - u.kick) / KICK_DECAY;
-  let angle = u.time * ROTATE_SPEED + ROTATE_SPEED * ROT_BOOST * kickIntegral;
+  let angle = u.time * ROTATE_SPEED + ROTATE_SPEED * ROT_BOOST * u.rotBoost;
   let c = cos(angle);
   let s = sin(angle);
   let rotated = vec3f(pos.x * c - pos.z * s, pos.y, pos.x * s + pos.z * c);
