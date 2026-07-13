@@ -21,6 +21,7 @@ export default defineConfig({
         foldLab: resolve(__dirname, 'src/foldLab/index.html'),
         isometricBlocks: resolve(__dirname, 'src/isometricBlocks/index.html'),
         focalRings: resolve(__dirname, 'src/focalRings/index.html'),
+        labChamber: resolve(__dirname, 'src/labChamber/index.html'),
       },
     },
   },
