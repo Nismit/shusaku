@@ -2,6 +2,7 @@ import { chottoGPU } from 'chottogpu';
 import { Timer } from '../libs/Timer.js';
 import { FPSGraph } from '../libs/FPSGraph.js';
 import { PointerInput } from '../libs/PointerInput.js';
+import { createLoadingProgress, tuneGPUPerformance } from '../libs/GPUPerformanceTuner.js';
 import GUI from '../libs/gui.js';
 
 import initWGSL from './shaders/init.wgsl?raw';
@@ -28,7 +29,7 @@ const ua = navigator.userAgent;
 const IS_MOBILE = /Android|iPhone|iPod/i.test(ua) || (/iPad|Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
 
 const MSAA = IS_MOBILE ? 1 : 4;
-const PCF_TAPS = IS_MOBILE ? 6 : 12;
+const DEFAULT_PCF_TAPS = IS_MOBILE ? 6 : 12;
 
 const hexToRGB = (hex) => [
   parseInt(hex.slice(1, 3), 16) / 255,
@@ -99,6 +100,7 @@ const makeRandomPalette = () => {
 };
 
 export const main = async () => {
+  const loading = createLoadingProgress();
   const canvas = document.createElement('canvas');
   canvas.style.width = '100vw';
   canvas.style.height = '100vh';
@@ -110,6 +112,10 @@ export const main = async () => {
 
   const chotto = await chottoGPU(canvas);
   const { device } = chotto;
+  loading.update(0.03, 'Preparing graphics');
+
+  let renderScale = 1;
+  let pcfTaps = DEFAULT_PCF_TAPS;
 
   const getBasePointSize = (w, h) => {
     const aspect = w / h;
@@ -303,15 +309,20 @@ export const main = async () => {
   };
   initGPGPU();
 
-  chotto.fitWindow((w, h) => {
+  const resizeRendering = () => {
+    const w = Math.max(1, Math.floor(window.innerWidth * initialPixelRatio * renderScale));
+    const h = Math.max(1, Math.floor(window.innerHeight * initialPixelRatio * renderScale));
+    canvas.width = w;
+    canvas.height = h;
     basePointSize = getBasePointSize(w, h);
     renderFBO.resize(w, h);
     velocityFBO.resize(w, h);
     motionBlurFBO.resize(w, h);
-    brightFBO.resize(w >> 1, h >> 1);
-    blurPing.resize(w >> 1, h >> 1);
-    blurPong.resize(w >> 1, h >> 1);
-  });
+    brightFBO.resize(Math.max(1, w >> 1), Math.max(1, h >> 1));
+    blurPing.resize(Math.max(1, w >> 1), Math.max(1, h >> 1));
+    blurPong.resize(Math.max(1, w >> 1), Math.max(1, h >> 1));
+  };
+  window.addEventListener('resize', resizeRendering);
 
   buildGUI();
 
@@ -456,7 +467,7 @@ export const main = async () => {
       sF32[16] = SHADOW_MAP_SIZE;
       sF32[17] = params.shadowBlurRadius;
       sF32[18] = params.shadowEnabled ? 1.0 : 0.0;
-      sI32[19] = PCF_TAPS;
+      sI32[19] = pcfTaps;
       sParamsUBO.write(sF32);
 
       const bgBindGroup = bg(bgPipeline.getBindGroupLayout(0), [buf(0, bgUBO)]);
@@ -565,10 +576,47 @@ export const main = async () => {
       }
     });
 
-    fpsGraph.update();
-    requestAnimationFrame(render);
+    if (!benchmarking) {
+      fpsGraph.update();
+      requestAnimationFrame(render);
+    }
   };
 
+  let benchmarking = true;
+  const qualityProfiles = [
+    { name: 'High', renderScale: 1.0, particleAmount: 1.0, shadowEnabled: true, pcfTaps: 12 },
+    { name: 'Balanced', renderScale: 0.9, particleAmount: 0.75, shadowEnabled: true, pcfTaps: 8 },
+    { name: 'Medium', renderScale: 0.75, particleAmount: 0.5, shadowEnabled: true, pcfTaps: 6 },
+    { name: 'Low', renderScale: 0.6, particleAmount: 0.3, shadowEnabled: false, pcfTaps: 4 },
+  ];
+
+  const tuning = await tuneGPUPerformance({
+    device,
+    profiles: qualityProfiles,
+    applyProfile: (profile) => {
+      renderScale = profile.renderScale;
+      pcfTaps = profile.pcfTaps;
+      params.particleAmount = profile.particleAmount;
+      params.shadowEnabled = profile.shadowEnabled;
+      resizeRendering();
+    },
+    renderFrame: render,
+    targetFPS: 60,
+    onProgress: (progress, profile, phase) => {
+      const suffix = phase === 'complete' ? profile.name : `Testing ${profile.name}`;
+      loading.update(0.05 + progress * 0.95, suffix);
+    },
+  });
+
+  console.info('[GPU tuner]', tuning.profile.name, tuning.results.map(({ profile, fps }) => ({
+    profile: profile.name,
+    fps: Math.round(fps),
+  })));
+  benchmarking = false;
+  timer.reset();
+  timer.start();
+  lastRawTime = 0;
+  await loading.finish();
   render();
 
   // --- GUI ---
