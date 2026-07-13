@@ -120,6 +120,7 @@ const BLOOM_SPREAD = 2.5;
 const BLOOM_INTENSITY = 0.35;
 const CA_STRENGTH = 0.03;
 const KICK_DECAY = 2.5;
+const ROT_KICK_DECAY = 0.8;
 
 function lookAt(eye, center, up) {
   const out = new Float32Array(16);
@@ -914,9 +915,10 @@ export const main = async () => {
     sceneData[20] = time;
     const kickElapsed = (performance.now() - lastKickTime) / 1000;
     const kick = Math.exp(-kickElapsed * KICK_DECAY);
+    const rotKick = Math.exp(-kickElapsed * ROT_KICK_DECAY);
     const dt = Math.max(0, time - prevUniformTime);
     prevUniformTime = time;
-    rotBoostAccum += kick * dt;
+    rotBoostAccum += rotKick * dt;
     sceneData[21] = kick;
     sceneData[22] = rotBoostAccum;
     sceneUBO.write(sceneData);
