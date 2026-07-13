@@ -13,7 +13,7 @@ export default defineConfig({
         main: resolve(__dirname, 'src/index.html'),
         fluidGallery: resolve(__dirname, 'src/fluidGallery/index.html'),
         ambientClock: resolve(__dirname, 'src/ambientClock/index.html'),
-        tunnelRaymarching: resolve(__dirname, 'src/tunnelRaymarching/index.html'),
+        signalVein: resolve(__dirname, 'src/signalVein/index.html'),
         foldRaymarching: resolve(__dirname, 'src/foldRaymarching/index.html'),
         mixFunctions: resolve(__dirname, 'src/mixFunctions/index.html'),
         baitBall: resolve(__dirname, 'src/baitBall/index.html'),

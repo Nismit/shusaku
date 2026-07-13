@@ -67,7 +67,7 @@ export const main = async () => {
     tunnelRadius: 1.0,
   };
 
-  const gui = new GUI({ title: 'Tunnel Raymarching' });
+  const gui = new GUI({ title: 'Signal Vein' });
   gui.add(params, 'speed', 0.1, 3.0, 0.1).name('Speed');
 
   const pathFolder = gui.addFolder('Path');
@@ -118,7 +118,7 @@ export const main = async () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `tunnel_raymarching_${Date.now()}.png`;
+    a.download = `signal_vein_${Date.now()}.png`;
     a.click();
     URL.revokeObjectURL(url);
   }
