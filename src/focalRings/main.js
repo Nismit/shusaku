@@ -9,6 +9,7 @@ import sdfShapeWGSL from './shaders/sdfShape.wgsl?raw';
 import hexRunnerWGSL from './shaders/hexRunner.wgsl?raw';
 import gaugeWGSL from './shaders/gauge.wgsl?raw';
 import ringGaugeWGSL from './shaders/ringGauge.wgsl?raw';
+import hexGaugeWGSL from './shaders/hexGauge.wgsl?raw';
 import { isMobile } from '../libs/DeviceDetect.js';
 import { PointerInput } from '../libs/PointerInput.js';
 
@@ -106,6 +107,19 @@ const GAUGE_TRACK_ALPHA = 0.14;
 const GAUGE_FILL_ALPHA = 0.85;
 const GAUGE_TICK_ALPHA = 0.8;
 
+const HEX_GAUGE = {
+  edgeIndex: 0,
+  radius: 6.6,
+  thickness: 0.10,
+  margin: 0.5,
+  tickWidth: 0.035,
+  tickLen: 0.10,
+  tickGap: 0.03,
+};
+const HEX_GAUGE_TRACK_ALPHA = 0.20;
+const HEX_GAUGE_FILL_ALPHA = 0.9;
+const HEX_GAUGE_TICK_ALPHA = 0.7;
+
 const GRID_EXTENT = 12;
 
 const CAM_DISTANCE_SCALE = isMobile() ? 1.7 : 1.0;
@@ -120,9 +134,10 @@ const BLOOM_SPREAD = 2.5;
 const BLOOM_INTENSITY = 0.35;
 const CA_STRENGTH = 0.03;
 const KICK_DECAY = 2.5;
-const SPEED_MULT_MAX = 3.0;
-const SPEED_MULT_STEP = 0.4;
-const SPEED_MULT_DECAY = 0.6;
+const SPEED_MULT_MAX = 6.0;
+const SPEED_MULT_STEP = 0.6;
+const SPEED_MULT_DECAY = 0.25;
+const SPEED_STAGES = 4;
 
 function lookAt(eye, center, up) {
   const out = new Float32Array(16);
@@ -597,6 +612,85 @@ function generateOuterGaugeRing() {
   };
 }
 
+function generateHexEdgeGauge() {
+  const cfg = HEX_GAUGE;
+  const verts = [];
+  const idxs = [];
+  const STRIDE = 5;
+
+  const corners = [];
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 3 * i - Math.PI / 6;
+    corners.push([Math.cos(a) * cfg.radius, Math.sin(a) * cfg.radius]);
+  }
+
+  const [ax, az] = corners[cfg.edgeIndex];
+  const [bx, bz] = corners[(cfg.edgeIndex + 1) % 6];
+
+  const dx = bx - ax, dz = bz - az;
+  const edgeLen = Math.sqrt(dx * dx + dz * dz);
+  const ex = dx / edgeLen, ez = dz / edgeLen;
+  const ox = ez, oz = -ex;
+
+  const halfT = cfg.thickness / 2;
+  const gaugeLen = edgeLen - 2 * cfg.margin;
+  const sx = ax + ex * cfg.margin, sz = az + ez * cfg.margin;
+
+  const segs = 32;
+
+  {
+    const base = verts.length / STRIDE;
+    for (let s = 0; s <= segs; s++) {
+      const t = s / segs;
+      const px = sx + ex * gaugeLen * t;
+      const pz = sz + ez * gaugeLen * t;
+      verts.push(px + ox * halfT, 0, pz + oz * halfT, HEX_GAUGE_TRACK_ALPHA, -1);
+      verts.push(px - ox * halfT, 0, pz - oz * halfT, HEX_GAUGE_TRACK_ALPHA, -1);
+    }
+    for (let s = 0; s < segs; s++) {
+      const a = base + s * 2, b = a + 1, c = a + 2, d = a + 3;
+      idxs.push(a, c, b, b, c, d);
+    }
+  }
+
+  {
+    const base = verts.length / STRIDE;
+    for (let s = 0; s <= segs; s++) {
+      const t = s / segs;
+      const px = sx + ex * gaugeLen * t;
+      const pz = sz + ez * gaugeLen * t;
+      verts.push(px + ox * halfT, 0, pz + oz * halfT, HEX_GAUGE_FILL_ALPHA, t);
+      verts.push(px - ox * halfT, 0, pz - oz * halfT, HEX_GAUGE_FILL_ALPHA, t);
+    }
+    for (let s = 0; s < segs; s++) {
+      const a = base + s * 2, b = a + 1, c = a + 2, d = a + 3;
+      idxs.push(a, c, b, b, c, d);
+    }
+  }
+
+  for (const param of [0, 0.25, 0.5, 0.75, 1]) {
+    const px = sx + ex * gaugeLen * param;
+    const pz = sz + ez * gaugeLen * param;
+    const hw = cfg.tickWidth / 2;
+    const tickStartX = px + ox * (halfT + cfg.tickGap);
+    const tickStartZ = pz + oz * (halfT + cfg.tickGap);
+    const tickEndX = px + ox * (halfT + cfg.tickGap + cfg.tickLen);
+    const tickEndZ = pz + oz * (halfT + cfg.tickGap + cfg.tickLen);
+
+    const base = verts.length / STRIDE;
+    verts.push(tickStartX + ex * hw, 0, tickStartZ + ez * hw, HEX_GAUGE_TICK_ALPHA, -1);
+    verts.push(tickStartX - ex * hw, 0, tickStartZ - ez * hw, HEX_GAUGE_TICK_ALPHA, -1);
+    verts.push(tickEndX + ex * hw, 0, tickEndZ + ez * hw, HEX_GAUGE_TICK_ALPHA, -1);
+    verts.push(tickEndX - ex * hw, 0, tickEndZ - ez * hw, HEX_GAUGE_TICK_ALPHA, -1);
+    idxs.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+  }
+
+  return {
+    positions: new Float32Array(verts),
+    indices: new Uint16Array(idxs),
+  };
+}
+
 function generateGrid() {
   const e = GRID_EXTENT;
   const verts = [
@@ -739,6 +833,11 @@ export const main = async () => {
   const outerGaugeRingIB = gpu.buffer(outerGaugeRing.indices, { index: true });
   const outerGaugeRingIdxCount = outerGaugeRing.indices.length;
 
+  const hexEdgeGauge = generateHexEdgeGauge();
+  const hexEdgeGaugeVB = gpu.buffer(hexEdgeGauge.positions, { vertex: true });
+  const hexEdgeGaugeIB = gpu.buffer(hexEdgeGauge.indices, { index: true });
+  const hexEdgeGaugeIdxCount = hexEdgeGauge.indices.length;
+
   const vertexLayout = [{
     arrayStride: 20,
     attributes: [
@@ -847,6 +946,21 @@ export const main = async () => {
     },
   });
 
+  const hexGaugePipe = gpu.pipeline({
+    vertex: hexGaugeWGSL,
+    fragment: hexGaugeWGSL,
+    format: RENDER_FORMAT,
+    vertexBuffers: vertexLayout,
+    depthTest: true,
+    depthWrite: false,
+    cullMode: 'none',
+    samples: MSAA,
+    blend: {
+      color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+      alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+    },
+  });
+
   const compositePipe = gpu.pipeline({
     vertex: gpu.FULLSCREEN_VERT,
     fragment: compositeWGSL,
@@ -895,6 +1009,10 @@ export const main = async () => {
     entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
   });
 
+  const hexGaugeBG = gpu.device.createBindGroup({
+    layout: hexGaugePipe.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: sceneUBO.buffer } }],
+  });
 
   const compositeSampler = gpu.device.createSampler({
     magFilter: 'linear', minFilter: 'linear',
@@ -922,9 +1040,13 @@ export const main = async () => {
     const dt = Math.max(0, time - prevUniformTime);
     prevUniformTime = time;
     speedMult = 1 + (speedMult - 1) * Math.exp(-dt * SPEED_MULT_DECAY);
-    rotBoostAccum += (speedMult - 1) * dt;
+    const speedLevel = (speedMult - 1) / (SPEED_MULT_MAX - 1);
+    const stage = Math.ceil(speedLevel * SPEED_STAGES);
+    const effectiveMult = 1 + (stage / SPEED_STAGES) * (SPEED_MULT_MAX - 1);
+    rotBoostAccum += (effectiveMult - 1) * dt;
     sceneData[21] = kick;
     sceneData[22] = rotBoostAccum;
+    sceneData[23] = speedLevel;
     sceneUBO.write(sceneData);
 
     compositeData[0] = BLOOM_INTENSITY + kick * 0.7;
@@ -1015,6 +1137,12 @@ export const main = async () => {
         p.setVertexBuffer(0, gaugeVB.buffer);
         p.setIndexBuffer(gaugeIB.buffer, 'uint16');
         p.drawIndexed(gaugeIdxCount);
+
+        p.setPipeline(hexGaugePipe);
+        p.setBindGroup(0, hexGaugeBG);
+        p.setVertexBuffer(0, hexEdgeGaugeVB.buffer);
+        p.setIndexBuffer(hexEdgeGaugeIB.buffer, 'uint16');
+        p.drawIndexed(hexEdgeGaugeIdxCount);
       });
 
       gpu.pass({ target: bloomA, clear: [0, 0, 0, 1] }, (p) => {
