@@ -14,15 +14,13 @@ struct VOut {
   @location(0) alpha: f32,
 };
 
-// rotBoost is accumulated on the CPU each frame as += kick*dt, so it's a
-// running integral that only ever grows - retriggering kick with another
-// click just changes its current slope, it never resets the accumulated
-// total. That keeps the extra angle (and the ring's rotation) continuous
-// across any number of clicks instead of snapping back on each tap.
-const ROT_BOOST: f32 = 3.0;
-
+// rotBoost is accumulated on the CPU each frame as += (speedMult-1)*dt,
+// where speedMult stacks up to 3x with each tap and eases back to 1x
+// when idle. Being a running integral, it only ever grows smoothly - it
+// never un-integrates, so the ring's rotation stays continuous no matter
+// how many times it's tapped, even mid-boost.
 @vertex fn vs(@location(0) pos: vec3f, @location(1) alpha: f32, @location(2) speed: f32) -> VOut {
-  let angle = u.time * speed + speed * ROT_BOOST * u.rotBoost;
+  let angle = u.time * speed + speed * u.rotBoost;
   let c = cos(angle);
   let s = sin(angle);
   let rotated = vec3f(pos.x * c - pos.z * s, pos.y, pos.x * s + pos.z * c);

@@ -120,7 +120,9 @@ const BLOOM_SPREAD = 2.5;
 const BLOOM_INTENSITY = 0.35;
 const CA_STRENGTH = 0.03;
 const KICK_DECAY = 2.5;
-const ROT_KICK_DECAY = 0.8;
+const SPEED_MULT_MAX = 3.0;
+const SPEED_MULT_STEP = 0.4;
+const SPEED_MULT_DECAY = 0.6;
 
 function lookAt(eye, center, up) {
   const out = new Float32Array(16);
@@ -691,9 +693,11 @@ export const main = async () => {
   let lastKickTime = -Infinity;
   let rotBoostAccum = 0;
   let prevUniformTime = 0;
+  let speedMult = 1.0;
   const pointer = new PointerInput(canvas);
   pointer.onClick(() => {
     lastKickTime = performance.now();
+    speedMult = Math.min(SPEED_MULT_MAX, speedMult + SPEED_MULT_STEP);
   });
 
   let colorFBO = gpu.framebuffer(canvas.width, canvas.height, {
@@ -915,10 +919,10 @@ export const main = async () => {
     sceneData[20] = time;
     const kickElapsed = (performance.now() - lastKickTime) / 1000;
     const kick = Math.exp(-kickElapsed * KICK_DECAY);
-    const rotKick = Math.exp(-kickElapsed * ROT_KICK_DECAY);
     const dt = Math.max(0, time - prevUniformTime);
     prevUniformTime = time;
-    rotBoostAccum += rotKick * dt;
+    speedMult = 1 + (speedMult - 1) * Math.exp(-dt * SPEED_MULT_DECAY);
+    rotBoostAccum += (speedMult - 1) * dt;
     sceneData[21] = kick;
     sceneData[22] = rotBoostAccum;
     sceneUBO.write(sceneData);

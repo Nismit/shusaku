@@ -18,12 +18,11 @@ struct VOut {
 const ROTATE_SPEED: f32 = 0.12;
 
 // See ring.wgsl for the derivation: rotBoost is a CPU-accumulated running
-// integral of kick (+= kick*dt each frame), so it never resets on a
-// retrigger - it just keeps growing, keeping the rotation continuous.
-const ROT_BOOST: f32 = 3.0;
-
+// integral of (speedMult-1), where speedMult stacks up to 3x per tap and
+// eases back to 1x when idle - it never resets on a retrigger, it just
+// keeps growing, keeping the rotation continuous.
 @vertex fn vs(@location(0) pos: vec3f, @location(1) alpha: f32, @location(2) param: f32) -> VOut {
-  let angle = u.time * ROTATE_SPEED + ROTATE_SPEED * ROT_BOOST * u.rotBoost;
+  let angle = u.time * ROTATE_SPEED + ROTATE_SPEED * u.rotBoost;
   let c = cos(angle);
   let s = sin(angle);
   let rotated = vec3f(pos.x * c - pos.z * s, pos.y, pos.x * s + pos.z * c);
