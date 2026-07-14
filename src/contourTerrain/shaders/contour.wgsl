@@ -89,15 +89,20 @@ fn raymarchTerrain(ro: vec3f, rd: vec3f) -> f32 {
 }
 
 fn contourLines(height: f32, gradient: vec2f) -> f32 {
-  let slope = length(gradient);
   let interval = mix(0.04, 0.18, pow(1.0 - clamp(height / TERRAIN_HEIGHT, 0.0, 1.0), 2.0));
-  let scaledH = height / interval;
-  let linePos = fract(scaledH);
-  let dh = slope / interval;
-  let lineWidth = clamp(dh * 1.5, 0.5, 12.0);
-  let aa = 1.0 / max(lineWidth, 1.0);
-  let dist = min(linePos, 1.0 - linePos);
-  return 1.0 - smoothstep(0.0, aa, dist);
+
+  // Signed height offset from the nearest contour level.
+  let f = height - round(height / interval) * interval;
+
+  // First-order Taylor approximation of the true Euclidean distance to the
+  // contour line: d = f(p) / |grad f(p)|.
+  // https://iquilezles.org/articles/distance/
+  let dist = f / max(length(gradient), 1e-4);
+
+  // Anti-alias using the screen-space footprint of that distance, so the
+  // line stays a crisp, constant pixel width regardless of terrain slope.
+  let aa = max(fwidth(dist), 1e-4);
+  return 1.0 - smoothstep(0.0, aa, abs(dist));
 }
 
 @fragment
