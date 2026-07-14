@@ -1,13 +1,13 @@
 struct Params {
   resolution: vec2f,
   time: f32,
+  maxDist: f32,
+  maxSteps: i32,
   _pad: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Params;
 
-const MAX_STEPS: i32 = 80;
-const MAX_DIST: f32 = 30.0;
 const TERRAIN_HEIGHT: f32 = 1.8;
 
 fn hash(p: vec2f) -> f32 {
@@ -73,8 +73,8 @@ fn raymarchTerrain(ro: vec3f, rd: vec3f) -> f32 {
   var lastH = 0.0;
   var lastY = 0.0;
 
-  for (var i = 0; i < MAX_STEPS; i++) {
-    if (t > MAX_DIST) { break; }
+  for (var i = 0; i < u.maxSteps; i++) {
+    if (t > u.maxDist) { break; }
     let p = ro + rd * t;
     let h = terrainHeightCoarse(p.xz);
     if (p.y < h) {
