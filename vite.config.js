@@ -22,6 +22,7 @@ export default defineConfig({
         isometricBlocks: resolve(__dirname, 'src/isometricBlocks/index.html'),
         focalRings: resolve(__dirname, 'src/focalRings/index.html'),
         labChamber: resolve(__dirname, 'src/labChamber/index.html'),
+        contourTerrain: resolve(__dirname, 'src/contourTerrain/index.html'),
       },
     },
   },
