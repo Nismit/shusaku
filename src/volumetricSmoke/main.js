@@ -128,6 +128,11 @@ export const main = async () => {
     spawnOffsetY: -0.35,
     buoyancy: 0.01,
     lateralSpread: 0.004,
+    // --- Heavy (dry-ice) smoke: 沈んで床を漂う冷気 ---
+    heavyFraction: 0.45,
+    heavySink: 0.006,
+    heavySpread: 0.007,
+    floorY: -0.5,
     // --- Smoke rendering ---
     particleAmount: IS_MOBILE ? 0.5 : 1.0,
     puffSize: 2.2,
@@ -192,9 +197,9 @@ export const main = async () => {
   const initF32 = new Float32Array(initAB);
   const initU32 = new Uint32Array(initAB);
 
-  // update Params: 8 scalars (32B) + burst vec4 (16B) + burstParams vec4 (16B) = 64 bytes
-  const updateUBO = chotto.buffer(64, { uniform: true });
-  const updateAB = new ArrayBuffer(64);
+  // update Params: 8 scalars (32B) + heavy vec4 (16B) + burst vec4 (16B) + burstParams vec4 (16B) = 80 bytes
+  const updateUBO = chotto.buffer(80, { uniform: true });
+  const updateAB = new ArrayBuffer(80);
   const updateF32 = new Float32Array(updateAB);
   const updateU32 = new Uint32Array(updateAB);
 
@@ -363,16 +368,22 @@ export const main = async () => {
       updateF32[6] = params.buoyancy;
       updateF32[7] = params.lateralSpread;
 
+      // heavy vec4 (8-11): x=比率, y=沈降強度, z=水平拡散, w=床の高さ
+      updateF32[8] = params.heavyFraction;
+      updateF32[9] = params.heavySink;
+      updateF32[10] = params.heavySpread;
+      updateF32[11] = params.floorY;
+
       const burstAge = scaledTime - burst.start;
       if (burst.active && burstAge > BURST_MAX_AGE) burst.active = false;
-      updateF32[8] = burst.pos[0];
-      updateF32[9] = burst.pos[1];
-      updateF32[10] = burst.pos[2];
-      updateF32[11] = burstAge;
-      updateF32[12] = burst.active ? params.burstStrength : 0.0;
-      updateF32[13] = params.burstWaveSpeed;
-      updateF32[14] = params.burstThickness;
-      updateF32[15] = params.burstDecay;
+      updateF32[12] = burst.pos[0];
+      updateF32[13] = burst.pos[1];
+      updateF32[14] = burst.pos[2];
+      updateF32[15] = burstAge;
+      updateF32[16] = burst.active ? params.burstStrength : 0.0;
+      updateF32[17] = params.burstWaveSpeed;
+      updateF32[18] = params.burstThickness;
+      updateF32[19] = params.burstDecay;
       updateUBO.write(updateF32);
 
       chotto.dispatch((p) => {
@@ -574,6 +585,12 @@ export const main = async () => {
     simFolder.add(params, 'spawnOffsetY', -1.0, 1.0, 0.01).name('Spawn Y Offset').onChange(() => initGPGPU());
     simFolder.add(params, 'buoyancy', 0.0, 0.03, 0.001).name('Buoyancy');
     simFolder.add(params, 'lateralSpread', 0.0, 0.015, 0.001).name('Lateral Spread');
+
+    const heavyFolder = gui.addFolder('Heavy Smoke (Dry Ice)');
+    heavyFolder.add(params, 'heavyFraction', 0.0, 1.0, 0.01).name('Fraction');
+    heavyFolder.add(params, 'heavySink', 0.0, 0.02, 0.001).name('Sink');
+    heavyFolder.add(params, 'heavySpread', 0.0, 0.02, 0.001).name('Floor Spread');
+    heavyFolder.add(params, 'floorY', -1.0, 0.0, 0.01).name('Floor Height');
 
     const smokeFolder = gui.addFolder('Smoke');
     smokeFolder.add(params, 'particleAmount', 0.05, 1.0, 0.01).name('Particle Amount');
