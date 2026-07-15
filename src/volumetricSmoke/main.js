@@ -17,14 +17,14 @@ import screenWGSL from './shaders/screen.wgsl?raw';
 
 import { buildLightMatrices } from './shadowHelper.js';
 
-const PARTICLE_COUNT = 512 * 512;
+const ua = navigator.userAgent;
+const IS_MOBILE = /Android|iPhone|iPod/i.test(ua) || (/iPad|Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+
+const PARTICLE_COUNT = IS_MOBILE ? 256 * 256 : 512 * 512;
 const WORKGROUP_SIZE = 64;
 const RENDER_FORMAT = 'rgba16float';
 const LIGHT_MAP_SIZE = 1024;
 const MAX_BLOOM_ITERATIONS = 8;
-
-const ua = navigator.userAgent;
-const IS_MOBILE = /Android|iPhone|iPod/i.test(ua) || (/iPad|Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
 
 const hexToRGB = (hex) => [
   parseInt(hex.slice(1, 3), 16) / 255,
@@ -146,7 +146,7 @@ export const main = async () => {
     // --- Camera ---
     rotationX: 0.3,
     rotationY: 0.0,
-    zoom: 3.2,
+    zoom: IS_MOBILE ? 2.3 : 3.2,
     autoRotate: false,
     autoRotateSpeed: 0.12,
     // --- Lighting / self-shadow ---
