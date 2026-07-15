@@ -18,6 +18,7 @@ export default defineConfig({
         mixFunctions: resolve(__dirname, 'src/mixFunctions/index.html'),
         baitBall: resolve(__dirname, 'src/baitBall/index.html'),
         murmuration: resolve(__dirname, 'src/murmuration/index.html'),
+        volumetricSmoke: resolve(__dirname, 'src/volumetricSmoke/index.html'),
         isometricBlocks: resolve(__dirname, 'src/isometricBlocks/index.html'),
         focalRings: resolve(__dirname, 'src/focalRings/index.html'),
         labChamber: resolve(__dirname, 'src/labChamber/index.html'),
