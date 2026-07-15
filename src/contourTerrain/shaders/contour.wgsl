@@ -129,13 +129,10 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 
   let t = raymarchTerrain(ro, rd);
 
-  if (t < 0.0) {
-    return vec4f(0.0, 0.0, 0.0, 1.0);
-  }
+  // Compute shading unconditionally so fwidth stays in uniform control flow.
+  let tSafe = max(t, 0.0);
+  let pos = ro + rd * tSafe;
 
-  let pos = ro + rd * t;
-
-  // Full-detail height + normal + contour at hit point only
   let height = terrainHeight(pos.xz);
   let eps = 0.02;
   let hx = terrainHeight(pos.xz + vec2f(eps, 0.0));
@@ -144,16 +141,14 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let grad = vec2f(hx - height, hz - height) / eps;
   let line = contourLines(height, grad);
 
-  // Lighting
   let lightDir = normalize(vec3f(0.5, 0.8, 0.3));
   let diff = max(dot(n, lightDir), 0.0);
   let lighting = 0.15 + diff * 0.25;
 
-  // Fog
-  let fog = 1.0 - exp(-t * 0.05);
+  let fog = 1.0 - exp(-tSafe * 0.05);
 
   let color = vec3f(line);
   let final_color = mix(color, vec3f(0.0), fog);
 
-  return vec4f(final_color, 1.0);
+  return select(vec4f(0.0, 0.0, 0.0, 1.0), vec4f(final_color, 1.0), t >= 0.0);
 }
