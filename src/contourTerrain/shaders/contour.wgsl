@@ -97,11 +97,16 @@ fn contourLines(height: f32, gradient: vec2f) -> f32 {
   // First-order Taylor approximation of the true Euclidean distance to the
   // contour line: d = f(p) / |grad f(p)|.
   // https://iquilezles.org/articles/distance/
-  let dist = f / max(length(gradient), 1e-4);
+  // Near hilltops/valley floors the gradient collapses to zero and this
+  // approximation blows up, so floor it relative to the interval rather
+  // than to an absolute epsilon.
+  let dist = f / max(length(gradient), interval * 0.5);
 
   // Anti-alias using the screen-space footprint of that distance, so the
   // line stays a crisp, constant pixel width regardless of terrain slope.
-  let aa = max(fwidth(dist), 1e-4);
+  // Cap the footprint so degenerate (near-zero gradient) fragments can't
+  // blow the line up into a melted blob covering the whole interval.
+  let aa = clamp(fwidth(dist), 1e-4, interval * 0.5);
   return 1.0 - smoothstep(0.0, aa, abs(dist));
 }
 
