@@ -125,7 +125,9 @@ export const main = async () => {
     timeScale: 0.45,
     lifetime: 1.11,
     spawnRadius: 0.2,
-    expandSpeed: 0.0,
+    spawnOffsetY: -0.35,
+    buoyancy: 0.01,
+    lateralSpread: 0.004,
     // --- Smoke rendering ---
     particleAmount: IS_MOBILE ? 0.5 : 1.0,
     puffSize: 2.2,
@@ -274,6 +276,7 @@ export const main = async () => {
     initU32[0] = PARTICLE_COUNT;
     initF32[1] = params.seed;
     initF32[2] = params.spawnRadius;
+    initF32[3] = params.spawnOffsetY;
     initUBO.write(initF32);
 
     [defaultPositions, positionsA, positionsB].forEach((posBuf) => {
@@ -357,7 +360,8 @@ export const main = async () => {
       updateF32[3] = params.noiseScale;
       updateF32[4] = params.noiseStrength;
       updateF32[5] = params.lifetime;
-      updateF32[6] = params.expandSpeed;
+      updateF32[6] = params.buoyancy;
+      updateF32[7] = params.lateralSpread;
 
       const burstAge = scaledTime - burst.start;
       if (burst.active && burstAge > BURST_MAX_AGE) burst.active = false;
@@ -567,7 +571,9 @@ export const main = async () => {
     simFolder.add(params, 'timeScale', 0.05, 3.0, 0.05).name('Time');
     simFolder.add(params, 'lifetime', 0.3, 3.0).name('Lifetime (sec)');
     simFolder.add(params, 'spawnRadius', 0.01, 0.5).name('Spawn Radius').onChange(() => initGPGPU());
-    simFolder.add(params, 'expandSpeed', 0.0, 0.05).name('Expand Speed');
+    simFolder.add(params, 'spawnOffsetY', -1.0, 1.0, 0.01).name('Spawn Y Offset').onChange(() => initGPGPU());
+    simFolder.add(params, 'buoyancy', 0.0, 0.03, 0.001).name('Buoyancy');
+    simFolder.add(params, 'lateralSpread', 0.0, 0.015, 0.001).name('Lateral Spread');
 
     const smokeFolder = gui.addFolder('Smoke');
     smokeFolder.add(params, 'particleAmount', 0.05, 1.0, 0.01).name('Particle Amount');

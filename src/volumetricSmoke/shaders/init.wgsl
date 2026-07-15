@@ -5,7 +5,7 @@ struct Params {
   count: u32,
   seed: f32,
   spawnRadius: f32,
-  _pad: f32,
+  spawnOffsetY: f32,
 };
 
 @group(0) @binding(0) var<storage, read_write> positions: array<vec4<f32>>;
@@ -42,6 +42,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   pos.z = r * cos(phi);
 
   let life = random(seed + 3u);
+
+  pos.y += params.spawnOffsetY;
 
   positions[idx] = vec4<f32>(pos, life);
 }

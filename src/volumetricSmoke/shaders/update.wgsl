@@ -9,10 +9,10 @@ struct Params {
   noiseScale: f32,
   noiseStrength: f32,
   lifetime: f32,
-  expandSpeed: f32,
-  _pad0: f32,
-  burst: vec4<f32>,        // xyz = タップ位置(世界座標), w = 経過時間
-  burstParams: vec4<f32>,  // x = 強さ, y = 波の速度, z = 殻の厚み, w = 減衰率
+  buoyancy: f32,
+  lateralSpread: f32,
+  burst: vec4<f32>,
+  burstParams: vec4<f32>,
 };
 
 @group(0) @binding(0) var<storage, read> positionsIn: array<vec4<f32>>;
@@ -176,32 +176,30 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     life = fract(defaultPos.w * 21.4131 + params.time) * 0.02;
   }
 
-  let radialDir = normalize(pos + vec3<f32>(0.0001));
-  pos += radialDir * params.expandSpeed * params.deltaFrames;
+  // 浮力: 暖かい煙が上昇し、冷えるにつれて減衰
+  let buoyancyEnvelope = smoothstep(0.0, 0.12, life) * (1.0 - smoothstep(0.55, 0.95, life));
+  let buoyancy = vec3<f32>(0.0, params.buoyancy * buoyancyEnvelope, 0.0);
 
-  let birthPhase = 1.0 - smoothstep(0.08, 0.30, life);
-  let curlPhase = smoothstep(0.12, 0.35, life) * (1.0 - smoothstep(0.72, 0.96, life));
-  let decayPhase = smoothstep(0.68, 0.96, life);
+  // 横拡散: 上昇とともに水平方向にじわじわ広がる
+  let spreadPhase = smoothstep(0.08, 0.45, life);
+  let horizontalPos = vec3<f32>(pos.x, 0.0, pos.z);
+  let lateralDir = normalize(horizontalPos + vec3<f32>(0.0001, 0.0, 0.0001));
+  let lateral = lateralDir * params.lateralSpread * spreadPhase;
 
-  // ドメインワーピング: 粗いスケール・遅い時間のカールで座標を歪めてからメインカールをサンプリング。
-  // 渦の内部が折り畳まれた複雑な形状（銀河腕・雲状）になる。
+  // カールノイズ乱流: 生まれたては素直に上昇、中盤でうねり、末期はゆっくり散る
+  let turbulence = smoothstep(0.05, 0.35, life) * (1.0 - smoothstep(0.65, 0.95, life));
+
   let persistence = 0.15 + life * 0.15;
   let warp = curl(pos * params.noiseScale * 0.38, params.time * 0.21, 0.28);
   let warpedPos = pos + warp * 0.17;
   var flow = curl(warpedPos * params.noiseScale, params.time, persistence);
   flow /= sqrt(length(flow) + 1e-4);
 
-  // ねじれヘリックス: スワール方向が高さ (pos.y) に応じて回転し、螺旋状の軌跡を生む。
-  // 単純な水平スワールよりも立体感・非対称性が出る。
-  let helixAngle = pos.y * 2.8 + params.time * 0.19;
-  let helixDir = normalize(vec3<f32>(-sin(helixAngle), 0.22, cos(helixAngle)));
+  let velocity = buoyancy
+               + flow * params.noiseStrength * turbulence
+               + lateral;
 
-  let radialFlow = radialDir * birthPhase - radialDir * decayPhase * 0.55;
-  flow = flow * mix(0.40, 1.05, curlPhase)
-       + helixDir * mix(0.12, 0.40, curlPhase)
-       + radialFlow * 0.65;
-
-  pos += flow * params.noiseStrength * params.deltaFrames;
+  pos += velocity * params.deltaFrames;
 
   // タップ衝撃波: タップ位置を中心に膨張する球殻が粒を外側へ押し出す。
   // 波面 (waveR) は時間とともに広がり、時間減衰でリップルがフェードする。
