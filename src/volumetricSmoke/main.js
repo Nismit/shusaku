@@ -122,7 +122,7 @@ export const main = async () => {
     // --- Simulation (murmuration と同一: 動き・リスポーンはそのまま) ---
     noiseScale: 2.4,
     noiseStrength: 0.00575,
-    timeScale: 1.0,
+    timeScale: 0.45,
     lifetime: 1.11,
     spawnRadius: 0.2,
     expandSpeed: 0.0,
@@ -134,7 +134,7 @@ export const main = async () => {
     densityScale: 1.6,
     absorption: 2.2,
     scatter: 1.5,
-    ambient: 0.32,
+    ambient: 0.45,
     wrap: 0.4,
     // --- Camera ---
     rotationX: 0.3,
@@ -146,7 +146,7 @@ export const main = async () => {
     lightVertical: 1.1,
     lightHorizontal: -1.57,
     lightColor: '#fff4e2',
-    lightIntensity: 1.0,
+    lightIntensity: 1.4,
     shadowExtent: 0.6,
     lightPuffSize: 48.0,
     lightDensityScale: 0.5,
@@ -155,7 +155,7 @@ export const main = async () => {
     // --- Grading ---
     saturation: 1.05,
     contrast: 1.06,
-    exposure: 1.08,
+    exposure: 1.5,
     toneMapping: 1.0,
     // --- Colors ---
     smokeColorA: '#9aa3ad',
