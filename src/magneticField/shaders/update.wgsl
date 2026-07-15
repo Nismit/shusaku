@@ -78,7 +78,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
   let fieldStrength = length(B);
   let fieldDir = B / max(fieldStrength, 1e-6);
-  let speed = clamp(fieldStrength * params.speed, 0.0, params.maxSpeed);
+  let speed = clamp(fieldStrength * params.speed, 0.002, params.maxSpeed);
   pos += fieldDir * speed * params.deltaFrames;
 
   // 極に近すぎたら吸収→リスポーン

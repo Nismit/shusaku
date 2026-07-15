@@ -110,8 +110,8 @@ export const main = async () => {
 
   // --- Poles ---
   const poles = [
-    { x: 0.3, y: 0.0, z: 0.0, charge: 1.0 },
-    { x: -0.3, y: 0.0, z: 0.0, charge: -1.0 },
+    { x: 0.15, y: 0.0, z: 0.0, charge: 1.0 },
+    { x: -0.15, y: 0.0, z: 0.0, charge: -1.0 },
   ];
 
   const params = {
@@ -157,9 +157,9 @@ export const main = async () => {
   const poleBuffer = chotto.buffer(poleDrawData, { storage: true });
 
   // --- Uniform buffers ---
-  // Init: { count: u32, seed: f32, spawnRadius: f32, _pad: f32 } = 16 bytes
-  const initUBO = chotto.buffer(16, { uniform: true });
-  const initAB = new ArrayBuffer(16);
+  // Init: { count: u32, seed: f32, spawnRadius: f32, _pad: f32, poleCenter: vec4f } = 32 bytes
+  const initUBO = chotto.buffer(32, { uniform: true });
+  const initAB = new ArrayBuffer(32);
   const initF32 = new Float32Array(initAB);
   const initU32 = new Uint32Array(initAB);
 
@@ -245,6 +245,10 @@ export const main = async () => {
     initU32[0] = PARTICLE_COUNT;
     initF32[1] = params.seed;
     initF32[2] = params.spawnRadius;
+    const nPole = poles.find(p => p.charge > 0) || poles[0];
+    initF32[4] = nPole.x;
+    initF32[5] = nPole.y;
+    initF32[6] = nPole.z;
     initUBO.write(initF32);
 
     [defaultPositions, positionsA, positionsB].forEach((posBuf) => {
