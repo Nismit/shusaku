@@ -9,9 +9,9 @@ struct Params {
   noiseScale: f32,
   noiseStrength: f32,
   lifetime: f32,
-  buoyancy: f32,
-  lateralSpread: f32,
-  heavy: vec4<f32>,        // x=比率, y=沈降強度, z=水平拡散, w=床の高さ
+  initialRise: f32,
+  // 1 word padding for vec4 alignment
+  heavy: vec4<f32>,        // y=沈降強度, z=水平拡散, w=床の高さ
   burst: vec4<f32>,
   burstParams: vec4<f32>,
 };
@@ -159,21 +159,6 @@ fn curl(p: vec3<f32>, noiseTime: f32, persistence: f32) -> vec3<f32> {
   );
 }
 
-// 整数ハッシュ（寿命とは独立した粒子固有の乱数を得る）
-fn hashU(x: u32) -> u32 {
-  var v = x;
-  v ^= v >> 16u;
-  v *= 0x7feb352du;
-  v ^= v >> 15u;
-  v *= 0x846ca68bu;
-  v ^= v >> 16u;
-  return v;
-}
-
-fn rand01(x: u32) -> f32 {
-  return f32(hashU(x)) / f32(0xffffffffu);
-}
-
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let idx = id.x;
@@ -182,11 +167,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let posData = positionsIn[idx];
   var pos = posData.xyz;
   var life = posData.w;
-
-  // 種別は寿命と独立した固有乱数で決定（各種別内で寿命フェーズが均等分布し、
-  // 常に一定量の床煙と上昇煙が共存する定常状態になる）
-  let typeRand = rand01(idx * 2654435761u + 12345u);
-  let isHeavy = typeRand < params.heavy.x;
 
   let lifeStep = 1.0 / (params.lifetime * 60.0);
   life += lifeStep * params.deltaFrames;
@@ -197,7 +177,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     life = fract(defaultPos.w * 21.4131 + params.time) * 0.02;
   }
 
-  // 全種別共通のカールノイズ流
   let persistence = 0.15 + life * 0.15;
   let warp = curl(pos * params.noiseScale * 0.38, params.time * 0.21, 0.28);
   let warpedPos = pos + warp * 0.17;
@@ -206,31 +185,16 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
   let outward = normalize(vec3<f32>(pos.x, 0.0, pos.z) + vec3<f32>(0.0001, 0.0, 0.0001));
 
-  var velocity: vec3<f32>;
-
-  if (isHeavy) {
-    // ドライアイスの冷気: 重く沈んで床に沿って水平に漂う
-    let floorY = params.heavy.w;
-    let heightAboveFloor = max(pos.y - floorY, 0.0);
-    let nearFloor = 1.0 - smoothstep(0.0, 0.5, heightAboveFloor);
-    // 沈降（床に近づくほど弱まり滞留する）
-    let sink = -params.heavy.y * smoothstep(0.03, 0.5, heightAboveFloor);
-    // 水平拡散（床付近ほど広がって溜まる）
-    let spread = outward * params.heavy.z * (0.4 + nearFloor);
-    // ゆっくりした乱流（垂直成分を抑えて平たく漂う）
-    let flatFlow = vec3<f32>(flow.x, flow.y * 0.15, flow.z);
-    velocity = vec3<f32>(0.0, sink, 0.0)
-             + spread
-             + flatFlow * params.noiseStrength * 0.5;
-  } else {
-    // 立ち上る煙: 浮力で上昇し、寿命に沿って拡散・うねる
-    let buoyancyEnvelope = smoothstep(0.0, 0.12, life) * (1.0 - smoothstep(0.55, 0.95, life));
-    let spreadPhase = smoothstep(0.08, 0.45, life);
-    let turbulence = smoothstep(0.05, 0.35, life) * (1.0 - smoothstep(0.65, 0.95, life));
-    velocity = vec3<f32>(0.0, params.buoyancy * buoyancyEnvelope, 0.0)
-             + outward * params.lateralSpread * spreadPhase
-             + flow * params.noiseStrength * turbulence;
-  }
+  let floorY = params.heavy.w;
+  let heightAboveFloor = max(pos.y - floorY, 0.0);
+  let nearFloor = 1.0 - smoothstep(0.0, 0.5, heightAboveFloor);
+  let sink = -params.heavy.y * smoothstep(0.03, 0.5, heightAboveFloor);
+  let spread = outward * params.heavy.z * (0.4 + nearFloor);
+  let riseFade = smoothstep(0.0, 0.05, life) * (1.0 - smoothstep(0.1, 0.3, life));
+  let flatFlow = vec3<f32>(flow.x, flow.y * 0.15, flow.z);
+  let velocity = vec3<f32>(0.0, sink + params.initialRise * riseFade, 0.0)
+               + spread
+               + flatFlow * params.noiseStrength * 0.5;
 
   pos += velocity * params.deltaFrames;
 

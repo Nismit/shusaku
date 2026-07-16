@@ -119,19 +119,17 @@ export const main = async () => {
   let basePointSize = getBasePointSize(canvas.width, canvas.height);
 
   const params = {
-    // --- Simulation (murmuration と同一: 動き・リスポーンはそのまま) ---
+    // --- Simulation ---
     noiseScale: 2.4,
     noiseStrength: 0.00575,
     timeScale: 0.45,
     lifetime: 1.11,
     spawnRadius: 0.2,
     spawnOffsetY: -0.35,
-    buoyancy: 0.01,
-    lateralSpread: 0.004,
-    // --- Heavy (dry-ice) smoke: 沈んで床を漂う冷気 ---
-    heavyFraction: 0.45,
-    heavySink: 0.006,
-    heavySpread: 0.007,
+    initialRise: 0.018,
+    // --- Dry-ice behavior: 沈んで床を漂い消えていく冷気 ---
+    sinkStrength: 0.006,
+    floorSpread: 0.007,
     floorY: -0.5,
     // --- Smoke rendering ---
     particleAmount: IS_MOBILE ? 0.5 : 1.0,
@@ -175,7 +173,7 @@ export const main = async () => {
     bloomThreshold: 0.7,
     bloomStrength: 0.5,
     bloomIterations: 5,
-    // --- Interaction (murmuration と同一のタップ衝撃波) ---
+    // --- Interaction ---
     burstStrength: 0.032,
     burstWaveSpeed: 1.4,
     burstThickness: 0.14,
@@ -197,7 +195,7 @@ export const main = async () => {
   const initF32 = new Float32Array(initAB);
   const initU32 = new Uint32Array(initAB);
 
-  // update Params: 8 scalars (32B) + heavy vec4 (16B) + burst vec4 (16B) + burstParams vec4 (16B) = 80 bytes
+  // update Params: 6 scalars + 2 pad (32B) + heavy vec4 (16B) + burst vec4 (16B) + burstParams vec4 (16B) = 80 bytes
   const updateUBO = chotto.buffer(80, { uniform: true });
   const updateAB = new ArrayBuffer(80);
   const updateF32 = new Float32Array(updateAB);
@@ -318,7 +316,7 @@ export const main = async () => {
   let lastRawTime = 0;
   let scaledTime = 0;
 
-  // --- Pointer interaction: tap/click shockwave (murmuration と同一) ---
+  // --- Pointer interaction: tap/click shockwave ---
   const BURST_MAX_AGE = 6.0;
   const burst = { pos: [0, 0, 0], start: -1e9, active: false };
 
@@ -358,20 +356,19 @@ export const main = async () => {
     const lightVP = buildLightMatrices(lightDir, params.shadowExtent);
 
     chotto.frame(() => {
-      // === GPGPU update (A -> B) — 動き・リスポーンは murmuration と同一 ===
+      // === GPGPU update (A -> B) ===
       updateU32[0] = PARTICLE_COUNT;
       updateF32[1] = scaledTime;
       updateF32[2] = deltaFrames;
       updateF32[3] = params.noiseScale;
       updateF32[4] = params.noiseStrength;
       updateF32[5] = params.lifetime;
-      updateF32[6] = params.buoyancy;
-      updateF32[7] = params.lateralSpread;
+      updateF32[6] = params.initialRise;
+      // [7] padding for vec4 alignment
 
-      // heavy vec4 (8-11): x=比率, y=沈降強度, z=水平拡散, w=床の高さ
-      updateF32[8] = params.heavyFraction;
-      updateF32[9] = params.heavySink;
-      updateF32[10] = params.heavySpread;
+      // heavy vec4 (8-11): y=沈降強度, z=水平拡散, w=床の高さ
+      updateF32[9] = params.sinkStrength;
+      updateF32[10] = params.floorSpread;
       updateF32[11] = params.floorY;
 
       const burstAge = scaledTime - burst.start;
@@ -583,14 +580,10 @@ export const main = async () => {
     simFolder.add(params, 'lifetime', 0.3, 3.0).name('Lifetime (sec)');
     simFolder.add(params, 'spawnRadius', 0.01, 0.5).name('Spawn Radius').onChange(() => initGPGPU());
     simFolder.add(params, 'spawnOffsetY', -1.0, 1.0, 0.01).name('Spawn Y Offset').onChange(() => initGPGPU());
-    simFolder.add(params, 'buoyancy', 0.0, 0.03, 0.001).name('Buoyancy');
-    simFolder.add(params, 'lateralSpread', 0.0, 0.015, 0.001).name('Lateral Spread');
-
-    const heavyFolder = gui.addFolder('Heavy Smoke (Dry Ice)');
-    heavyFolder.add(params, 'heavyFraction', 0.0, 1.0, 0.01).name('Fraction');
-    heavyFolder.add(params, 'heavySink', 0.0, 0.02, 0.001).name('Sink');
-    heavyFolder.add(params, 'heavySpread', 0.0, 0.02, 0.001).name('Floor Spread');
-    heavyFolder.add(params, 'floorY', -1.0, 0.0, 0.01).name('Floor Height');
+    simFolder.add(params, 'initialRise', 0.0, 0.03, 0.001).name('Initial Rise');
+    simFolder.add(params, 'sinkStrength', 0.0, 0.02, 0.001).name('Sink');
+    simFolder.add(params, 'floorSpread', 0.0, 0.02, 0.001).name('Floor Spread');
+    simFolder.add(params, 'floorY', -1.0, 0.0, 0.01).name('Floor Height');
 
     const smokeFolder = gui.addFolder('Smoke');
     smokeFolder.add(params, 'particleAmount', 0.05, 1.0, 0.01).name('Particle Amount');
