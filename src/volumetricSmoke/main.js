@@ -133,7 +133,7 @@ export const main = async () => {
     floorY: -0.5,
     // --- Smoke rendering ---
     particleAmount: IS_MOBILE ? 0.5 : 1.0,
-    puffSize: 2.2,
+    puffSize: 3.5,
     softness: 2.2,
     density: 0.55,
     densityScale: 1.6,
@@ -153,7 +153,7 @@ export const main = async () => {
     lightColor: '#fff4e2',
     lightIntensity: 1.4,
     shadowExtent: 0.6,
-    lightPuffSize: 48.0,
+    lightPuffSize: 76.0,
     lightDensityScale: 0.5,
     lightSoftness: 2.0,
     shadowSoftness: 1.6,
