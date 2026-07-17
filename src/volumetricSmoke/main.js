@@ -50,10 +50,10 @@ const hslToHex = (h, s, l) => {
 //   C(消滅)   = 拡散して光を失い、背景へ溶ける暗いトーン。
 //   背景      = 煙が沈み込む深い色。上→下でわずかに持ち上げる。
 const PALETTES = {
-  // 灰: ニュートラルな煙。冷たいグレーが立ち上がり暗部へ沈む。
+  // 灰: ニュートラルな煙。冷たい青灰が立ち上がり暗部へ沈む。
   Ash: {
-    smokeColorA: '#9aa3ad', smokeColorB: '#d7d3c9', smokeColorC: '#1b1e24',
-    bgTop: '#05070a', bgBottom: '#10141b', lightColor: '#fff4e2',
+    smokeColorA: '#8b9bb2', smokeColorB: '#c6d0dd', smokeColorC: '#161b26',
+    bgTop: '#04060c', bgBottom: '#0c121e', lightColor: '#eef3ff',
   },
   // 残り火: 暖かい下焼けの残る黒煙。オレンジが芯に灯る。
   Ember: {
@@ -150,7 +150,7 @@ export const main = async () => {
     // --- Lighting / self-shadow ---
     lightVertical: 1.1,
     lightHorizontal: -1.57,
-    lightColor: '#fff4e2',
+    lightColor: '#eef3ff',
     lightIntensity: 1.4,
     shadowExtent: 0.6,
     lightPuffSize: 76.0,
@@ -163,11 +163,11 @@ export const main = async () => {
     exposure: 1.5,
     toneMapping: 1.0,
     // --- Colors ---
-    smokeColorA: '#9aa3ad',
-    smokeColorB: '#d7d3c9',
-    smokeColorC: '#1b1e24',
-    bgTop: '#05070a',
-    bgBottom: '#10141b',
+    smokeColorA: '#8b9bb2',
+    smokeColorB: '#c6d0dd',
+    smokeColorC: '#161b26',
+    bgTop: '#04060c',
+    bgBottom: '#0c121e',
     // --- Bloom ---
     bloomEnabled: false,
     bloomThreshold: 0.7,
