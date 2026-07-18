@@ -41,6 +41,9 @@ export const main = async () => {
     splatForce: 50,
     colorful: true,
     color: '#00bcd4',
+    dotMatrix: true,
+    dotCell: 10,
+    dotScale: 0.9,
   };
 
   const hexToRgb = (hex) => {
@@ -89,6 +92,7 @@ export const main = async () => {
   const divUBO = makeUBO(16);     // Params: texelSize vec2 (+ pad)
   const pressureUBO = makeUBO(16);
   const gradUBO = makeUBO(16);
+  const displayUBO = makeUBO(32); // Params: resolution vec2 + cellSize + dotScale + enabled + pad
 
   // --- Bind group helpers ---
   const bind = (pipeline, entries) => device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
@@ -243,6 +247,12 @@ export const main = async () => {
     }
   });
   colorController.disable();
+
+  const dotFolder = gui.addFolder('Dot Matrix');
+  dotFolder.add(config, 'dotMatrix').name('Enabled');
+  dotFolder.add(config, 'dotCell', 4, 40).step(1).name('Cell Size');
+  dotFolder.add(config, 'dotScale', 0.2, 1.0).step(0.05).name('Dot Size');
+
   gui.close();
 
   // --- Render loop ---
@@ -278,8 +288,14 @@ export const main = async () => {
       // Simulation
       step(dt);
 
-      // Display to canvas
-      fullscreen(displayPipeline, null, [smp(0), tex(1, dye.read)]);
+      // Display to canvas (+ dot matrix post effect)
+      displayUBO.data[0] = canvas.width;
+      displayUBO.data[1] = canvas.height;
+      displayUBO.data[2] = config.dotCell * dpr; // GUI 値は CSS px なので DPR を掛ける
+      displayUBO.data[3] = config.dotScale;
+      displayUBO.data[4] = config.dotMatrix ? 1 : 0;
+      displayUBO.ubo.write(displayUBO.data);
+      fullscreen(displayPipeline, null, [smp(0), tex(1, dye.read), buf(2, displayUBO)]);
     });
 
     requestAnimationFrame(render);
