@@ -44,7 +44,10 @@ export const main = async () => {
     dotMatrix: true,
     dotCell: 10,
     dotScale: 0.9,
+    holdPattern: 'Pixelated', // 長押し時のモーフ先
   };
+
+  const HOLD_TARGETS = { Pixelated: 0, Diamond: 1 };
 
   const hexToRgb = (hex) => {
     const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -120,6 +123,12 @@ export const main = async () => {
     smoothedVelocity.x += (rawVel.x * 0.5 - smoothedVelocity.x) * smoothing;
     smoothedVelocity.y += (rawVel.y * 0.5 - smoothedVelocity.y) * smoothing;
   });
+
+  // 長押しモーフ状態: 押している間 1 へ、離すと 0 へイージング
+  let holdAmount = 0;
+  let pressing = false;
+  pointer.onPress(() => { pressing = true; });
+  pointer.onRelease(() => { pressing = false; });
 
   // --- Random color ---
   const randomColor = () => {
@@ -252,6 +261,7 @@ export const main = async () => {
   dotFolder.add(config, 'dotMatrix').name('Enabled');
   dotFolder.add(config, 'dotCell', 4, 40).step(1).name('Cell Size');
   dotFolder.add(config, 'dotScale', 0.2, 1.0).step(0.05).name('Dot Size');
+  dotFolder.add(config, 'holdPattern', Object.keys(HOLD_TARGETS)).name('Hold Pattern');
 
   gui.close();
 
@@ -266,6 +276,11 @@ export const main = async () => {
     // Decay smoothed velocity when not moving
     smoothedVelocity.x *= decay;
     smoothedVelocity.y *= decay;
+
+    // 長押しモーフ量を目標へイージング (押下:立ち上がり / 解放:戻り)
+    const holdTarget = pressing ? 1 : 0;
+    const holdRate = pressing ? 3.0 : 4.5;
+    holdAmount += (holdTarget - holdAmount) * Math.min(1, holdRate * dt);
 
     // Color change
     colorTimer += dt;
@@ -294,6 +309,8 @@ export const main = async () => {
       displayUBO.data[2] = config.dotCell * dpr; // GUI 値は CSS px なので DPR を掛ける
       displayUBO.data[3] = config.dotScale;
       displayUBO.data[4] = config.dotMatrix ? 1 : 0;
+      displayUBO.data[5] = holdAmount;
+      displayUBO.data[6] = HOLD_TARGETS[config.holdPattern] ?? 0;
       displayUBO.ubo.write(displayUBO.data);
       fullscreen(displayPipeline, null, [smp(0), tex(1, dye.read), buf(2, displayUBO)]);
     });
