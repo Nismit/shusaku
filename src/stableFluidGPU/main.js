@@ -41,13 +41,23 @@ export const main = async () => {
     splatForce: 50,
     colorful: true,
     color: '#00bcd4',
-    dotMatrix: true,
-    dotCell: 10,
-    dotScale: 0.9,
-    holdPattern: 'Pixelated', // 長押し時のモーフ先
+    dotCell: 7,
+    dotScale: 0.8,
   };
 
-  const HOLD_TARGETS = { Pixelated: 0, Diamond: 1 };
+  const EFFECTS = ['DOT', 'PIXEL', 'HEX'];
+  let currentEffect = 0;
+  let prevEffect = 0;
+  let transitionAmount = 1.0;
+
+  const HOLD_THRESHOLD = 400;
+  let pressStartTime = 0;
+  let effectSwitched = false;
+
+  const label = document.createElement('div');
+  label.style.cssText = 'position:fixed;top:16px;left:16px;color:rgba(255,255,255,0.8);font-family:"Courier New",monospace;font-size:12px;letter-spacing:2px;pointer-events:none;z-index:10;text-shadow:0 1px 3px rgba(0,0,0,0.5)';
+  label.textContent = EFFECTS[currentEffect];
+  document.body.appendChild(label);
 
   const hexToRgb = (hex) => {
     const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -124,10 +134,12 @@ export const main = async () => {
     smoothedVelocity.y += (rawVel.y * 0.5 - smoothedVelocity.y) * smoothing;
   });
 
-  // 長押しモーフ状態: 押している間 1 へ、離すと 0 へイージング
-  let holdAmount = 0;
   let pressing = false;
-  pointer.onPress(() => { pressing = true; });
+  pointer.onPress(() => {
+    pressing = true;
+    pressStartTime = performance.now();
+    effectSwitched = false;
+  });
   pointer.onRelease(() => { pressing = false; });
 
   // --- Random color ---
@@ -257,11 +269,9 @@ export const main = async () => {
   });
   colorController.disable();
 
-  const dotFolder = gui.addFolder('Dot Matrix');
-  dotFolder.add(config, 'dotMatrix').name('Enabled');
+  const dotFolder = gui.addFolder('Post Effect');
   dotFolder.add(config, 'dotCell', 4, 40).step(1).name('Cell Size');
   dotFolder.add(config, 'dotScale', 0.2, 1.0).step(0.05).name('Dot Size');
-  dotFolder.add(config, 'holdPattern', Object.keys(HOLD_TARGETS)).name('Hold Pattern');
 
   gui.close();
 
@@ -277,10 +287,16 @@ export const main = async () => {
     smoothedVelocity.x *= decay;
     smoothedVelocity.y *= decay;
 
-    // 長押しモーフ量を目標へイージング (押下:立ち上がり / 解放:戻り)
-    const holdTarget = pressing ? 1 : 0;
-    const holdRate = pressing ? 3.0 : 4.5;
-    holdAmount += (holdTarget - holdAmount) * Math.min(1, holdRate * dt);
+    if (pressing && !effectSwitched && now - pressStartTime > HOLD_THRESHOLD) {
+      prevEffect = currentEffect;
+      currentEffect = (currentEffect + 1) % EFFECTS.length;
+      transitionAmount = 0;
+      effectSwitched = true;
+      label.textContent = EFFECTS[currentEffect];
+    }
+    if (transitionAmount < 1) {
+      transitionAmount = Math.min(1, transitionAmount + dt * 4);
+    }
 
     // Color change
     colorTimer += dt;
@@ -304,13 +320,17 @@ export const main = async () => {
       step(dt);
 
       // Display to canvas (+ dot matrix post effect)
+      const EFFECT_PARAMS = [[config.dotCell, config.dotScale], [9, 0.9], [13, 0.9]];
+      const [cellVal, scaleVal] = EFFECT_PARAMS[currentEffect];
+      const cellSize = cellVal * dpr;
+      const dotScale = scaleVal;
       displayUBO.data[0] = canvas.width;
       displayUBO.data[1] = canvas.height;
-      displayUBO.data[2] = config.dotCell * dpr; // GUI 値は CSS px なので DPR を掛ける
-      displayUBO.data[3] = config.dotScale;
-      displayUBO.data[4] = config.dotMatrix ? 1 : 0;
-      displayUBO.data[5] = holdAmount;
-      displayUBO.data[6] = HOLD_TARGETS[config.holdPattern] ?? 0;
+      displayUBO.data[2] = cellSize;
+      displayUBO.data[3] = dotScale;
+      displayUBO.data[4] = currentEffect;
+      displayUBO.data[5] = prevEffect;
+      displayUBO.data[6] = transitionAmount;
       displayUBO.ubo.write(displayUBO.data);
       fullscreen(displayPipeline, null, [smp(0), tex(1, dye.read), buf(2, displayUBO)]);
     });
