@@ -1,16 +1,17 @@
 // 染料フィールドを画面へ転送 + dot matrix ポストエフェクト (fullscreen)
 // WebGL 版 display.frag の WGSL 移植 + LED パネル風ハーフトーン。
+// 長押し中は dot から目標パターン (pixelated / diamond) へモーフする。
 // シミュレーションは WebGL と同じ y-up 座標系で解いているため、
 // chottoGPU のフルスクリーン uv (y-down / top-left 原点) に合わせて y を反転する。
 
 struct Params {
   resolution: vec2<f32>, // canvas のデバイスピクセル解像度
   cellSize: f32,         // ドット格子 1 セルの一辺 (px)
-  dotScale: f32,         // セルに対するドット最大半径の比 (0..1)
+  dotScale: f32,         // セルに対するマーク最大半径の比 (0..1)
   enabled: f32,          // 0 = 素の流体, 1 = dot matrix
-  _pad0: f32,
-  _pad1: f32,
-  _pad2: f32,
+  hold: f32,             // 長押しモーフ量 (0 = dot, 1 = 目標パターン)
+  targetMode: f32,       // 0 = pixelated, 1 = diamond
+  _pad: f32,
 };
 
 @group(0) @binding(0) var uSampler: sampler;
@@ -26,21 +27,29 @@ fn sampleField(uv: vec2<f32>) -> vec3<f32> {
 fn fs(@builtin(position) fragCoord: vec4<f32>, @location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
   let plain = sampleField(uv);
 
-  // スクリーンピクセル空間でセル格子を組む (アスペクトに依らず正方ドット)
+  // スクリーンピクセル空間でセル格子を組む (アスペクトに依らず正方セル)
   let cell = max(p.cellSize, 2.0);
   let cellCenter = floor(fragCoord.xy / cell) * cell + cell * 0.5;
   let cellColor = sampleField(cellCenter / p.resolution);
 
-  // 輝度でドット半径を決める。面積 ∝ 輝度 になるよう半径は sqrt を取る。
+  // 輝度でマーク半径を決める。面積 ∝ 輝度 になるよう半径は sqrt を取る。
   let lum = clamp(dot(cellColor, vec3<f32>(0.299, 0.587, 0.114)), 0.0, 1.0);
-  let maxR = cell * 0.5 * p.dotScale;
-  let radius = maxR * sqrt(lum);
+  let radius = cell * 0.5 * p.dotScale * sqrt(lum);
+  let delta = fragCoord.xy - cellCenter;
 
-  // 1px アンチエイリアスした円マスク
-  let d = distance(fragCoord.xy, cellCenter);
-  let mask = 1.0 - smoothstep(radius - 1.0, radius + 1.0, d);
+  // dot: ユークリッド距離の円
+  let dotMask = 1.0 - smoothstep(radius - 1.0, radius + 1.0, length(delta));
+  let dotColor = cellColor * dotMask;
 
-  let dotColor = cellColor * mask;
-  let color = mix(plain, dotColor, p.enabled);
+  // 目標パターン: pixelated (セル全塗り) / diamond (マンハッタン距離の菱形)
+  let pixelColor = cellColor;
+  let diamondMask = 1.0 - smoothstep(radius - 1.0, radius + 1.0, abs(delta.x) + abs(delta.y));
+  let diamondColor = cellColor * diamondMask;
+  let targetColor = mix(pixelColor, diamondColor, p.targetMode);
+
+  // dot ↔ 目標パターンを長押し量でモーフ
+  let matrixColor = mix(dotColor, targetColor, clamp(p.hold, 0.0, 1.0));
+
+  let color = mix(plain, matrixColor, p.enabled);
   return vec4<f32>(color, 1.0);
 }
