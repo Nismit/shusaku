@@ -57,10 +57,27 @@ export const main = async () => {
   let movedTooFar = false;
   let effectSwitched = false;
 
+  // 切り替え時にラベルを一瞬パルス発光させるキーフレーム
+  const pulseStyle = document.createElement('style');
+  pulseStyle.textContent = `
+@keyframes effect-pulse {
+  0%   { transform: scale(1);    opacity: 0.8; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+  12%  { transform: scale(1.4);  opacity: 1;   text-shadow: 0 0 14px rgba(255,255,255,0.95), 0 1px 3px rgba(0,0,0,0.5); }
+  100% { transform: scale(1);    opacity: 0.8; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+}`;
+  document.head.appendChild(pulseStyle);
+
   const label = document.createElement('div');
-  label.style.cssText = 'position:fixed;top:16px;left:16px;color:rgba(255,255,255,0.8);font-family:"Courier New",monospace;font-size:12px;letter-spacing:2px;pointer-events:none;z-index:10;text-shadow:0 1px 3px rgba(0,0,0,0.5)';
+  label.style.cssText = 'position:fixed;top:16px;left:16px;color:rgba(255,255,255,0.8);font-family:"Courier New",monospace;font-size:12px;letter-spacing:2px;pointer-events:none;z-index:10;transform-origin:left center;text-shadow:0 1px 3px rgba(0,0,0,0.5)';
   label.textContent = EFFECTS[currentEffect];
   document.body.appendChild(label);
+
+  // ラベルのパルスアニメーションを（連続切り替えでも）確実に再トリガー
+  const pulseLabel = () => {
+    label.style.animation = 'none';
+    void label.offsetWidth; // reflow して再生をリセット
+    label.style.animation = 'effect-pulse 0.5s ease-out';
+  };
 
   const hexToRgb = (hex) => {
     const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -308,6 +325,7 @@ export const main = async () => {
       transitionAmount = 0;
       effectSwitched = true;
       label.textContent = EFFECTS[currentEffect];
+      pulseLabel();
     }
     if (transitionAmount < 1) {
       transitionAmount = Math.min(1, transitionAmount + dt * 4);
