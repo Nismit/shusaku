@@ -51,7 +51,10 @@ export const main = async () => {
   let transitionAmount = 1.0;
 
   const HOLD_THRESHOLD = 400;
+  const MOVE_THRESHOLD = 12; // px。これ以上動いたらドラッグとみなし長押しを無効化
   let pressStartTime = 0;
+  let pressStartPos = { x: 0, y: 0 };
+  let movedTooFar = false;
   let effectSwitched = false;
 
   const label = document.createElement('div');
@@ -132,12 +135,24 @@ export const main = async () => {
     const rawVel = pointer.getNormalizedVelocity();
     smoothedVelocity.x += (rawVel.x * 0.5 - smoothedVelocity.x) * smoothing;
     smoothedVelocity.y += (rawVel.y * 0.5 - smoothedVelocity.y) * smoothing;
+
+    // 押している間、開始位置からの移動量を監視。閾値を超えたらドラッグ扱い
+    if (pressing && !movedTooFar) {
+      const p = pointer.getPixelPosition();
+      const dx = p.x - pressStartPos.x;
+      const dy = p.y - pressStartPos.y;
+      if (dx * dx + dy * dy > MOVE_THRESHOLD * MOVE_THRESHOLD) {
+        movedTooFar = true;
+      }
+    }
   });
 
   let pressing = false;
   pointer.onPress(() => {
     pressing = true;
     pressStartTime = performance.now();
+    pressStartPos = pointer.getPixelPosition();
+    movedTooFar = false;
     effectSwitched = false;
   });
   pointer.onRelease(() => { pressing = false; });
@@ -287,7 +302,7 @@ export const main = async () => {
     smoothedVelocity.x *= decay;
     smoothedVelocity.y *= decay;
 
-    if (pressing && !effectSwitched && now - pressStartTime > HOLD_THRESHOLD) {
+    if (pressing && !effectSwitched && !movedTooFar && now - pressStartTime > HOLD_THRESHOLD) {
       prevEffect = currentEffect;
       currentEffect = (currentEffect + 1) % EFFECTS.length;
       transitionAmount = 0;
