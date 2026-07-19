@@ -23,7 +23,7 @@ export default defineConfig({
         labChamber: resolve(__dirname, 'src/labChamber/index.html'),
         contourTerrain: resolve(__dirname, 'src/contourTerrain/index.html'),
         magneticField: resolve(__dirname, 'src/magneticField/index.html'),
-        stableFluidGPU: resolve(__dirname, 'src/stableFluidGPU/index.html'),
+        halftoneFlow: resolve(__dirname, 'src/halftoneFlow/index.html'),
       },
     },
   },
