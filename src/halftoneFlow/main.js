@@ -283,7 +283,7 @@ export const main = async () => {
   };
 
   // --- GUI ---
-  const gui = new GUI({ title: 'Stable Fluid (WebGPU)' });
+  const gui = new GUI({ title: 'Halftone Flow' });
   gui.add(config, 'dyeDissipation', 0, 5).step(0.1).name('Dye Fade');
   gui.add(config, 'pressureIterations', 1, 50).step(1).name('Pressure Iter');
   gui.add(config, 'splatSize', 1, 30).step(1).name('Splat Size');
