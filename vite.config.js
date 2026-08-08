@@ -24,6 +24,7 @@ export default defineConfig({
         contourTerrain: resolve(__dirname, 'src/contourTerrain/index.html'),
         magneticField: resolve(__dirname, 'src/magneticField/index.html'),
         halftoneFlow: resolve(__dirname, 'src/halftoneFlow/index.html'),
+        chromaCountdown: resolve(__dirname, 'src/chromaCountdown/index.html'),
       },
     },
   },
