@@ -1,5 +1,8 @@
 import { chottoGL } from '../libs/esChottoGL.js';
+import { PointerInput } from '../libs/PointerInput.js';
 import GUI from '../libs/gui.js';
+
+import { createFluid } from './fluid.js';
 
 import glyphVert from './shaders/glyph.vert?raw';
 import glyphFrag from './shaders/glyph.frag?raw';
@@ -14,7 +17,7 @@ const hexToRgb = (hex) => {
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 };
 
-// --- Deterministic hash / value noise ---------------------------------------
+// --- Deterministic hash ------------------------------------------------------
 
 const hash3i = (i, j, k) => {
   let h = Math.imul(i, 374761393) ^ Math.imul(j, 668265263) ^ Math.imul(k, 1442695041);
@@ -22,44 +25,13 @@ const hash3i = (i, j, k) => {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 };
 
-// Quintic fade — C2 continuous, which matters because the curl below takes a
-// numerical derivative of this field.
-const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
-
-const valueNoise3 = (x, y, z) => {
-  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
-  const xf = fade(x - xi), yf = fade(y - yi), zf = fade(z - zi);
-
-  const c = (dx, dy, dz) => hash3i(xi + dx, yi + dy, zi + dz);
-
-  const x00 = c(0, 0, 0) + (c(1, 0, 0) - c(0, 0, 0)) * xf;
-  const x10 = c(0, 1, 0) + (c(1, 1, 0) - c(0, 1, 0)) * xf;
-  const x01 = c(0, 0, 1) + (c(1, 0, 1) - c(0, 0, 1)) * xf;
-  const x11 = c(0, 1, 1) + (c(1, 1, 1) - c(0, 1, 1)) * xf;
-
-  const y0 = x00 + (x10 - x00) * yf;
-  const y1 = x01 + (x11 - x01) * yf;
-
-  return (y0 + (y1 - y0) * zf) * 2 - 1;
-};
-
-const fbm3 = (x, y, z) => {
-  let sum = 0;
-  let amp = 0.5;
-  let freq = 1;
-  for (let i = 0; i < 3; i++) {
-    sum += valueNoise3(x * freq, y * freq, z * freq + i * 19.7) * amp;
-    amp *= 0.5;
-    freq *= 2.1;
-  }
-  return sum;
-};
-
 export const main = async () => {
   const canvas = document.createElement('canvas');
   document.body.appendChild(canvas);
 
-  const cgl = chottoGL(canvas);
+  const cgl = chottoGL(canvas, {
+    extensions: ['OES_texture_float_linear', 'EXT_color_buffer_float', 'EXT_color_buffer_half_float'],
+  });
   const gl = cgl.gl;
 
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -82,10 +54,17 @@ export const main = async () => {
     lineWidth: 1.0,      // CSS px
     lineAlpha: 0.3,
     textAlpha: 0.95,
-    speed: 0.035,        // sweep cycles per second
-    wander: 0.13,        // curl displacement, fraction of the viewport
-    noiseScale: 0.55,    // curl field frequency, per viewport height
-    timeScale: 0.12,     // how fast the field itself evolves
+    drifters: 2,         // tracers carried by the fluid, one cascade each
+    flowGain: 0.3,       // how much of the fluid's speed a drifter takes on
+    inertia: 0.4,        // seconds a drifter takes to match the flow
+    minSpeed: 0.02,      // viewport widths per second, never fully still
+    stirForce: 1.6,      // lattice forcing, UV per second squared
+    stirScale: 1.6,      // vortex cells across the frame
+    stirSpeed: 1.0,      // how fast the lattice phases wander
+    dissipation: 0.15,   // velocity decay per second
+    pressureIterations: 20,
+    pointerForce: 1.2,
+    pointerSize: 0.05,   // pointer splat radius, fraction of the viewport
     grain: 0.03,
     grainScale: 1.5,     // grain cell size in CSS px
     textColor: '#ddd7c6',
@@ -257,52 +236,133 @@ export const main = async () => {
     glyphStream.length = i;
   };
 
-  // --- Attractor --------------------------------------------------------------
+  // --- Fluid ------------------------------------------------------------------
 
-  const attractor = { x: 0.5, y: 0.5 }; // normalised viewport coords
-  let phase = 0;
+  const fluid = createFluid(cgl, { resolution: 256, probeResolution: 64 });
 
-  // Curl of a scalar fBm potential — divergence-free, so the offset it produces
-  // swirls rather than collapsing into a sink.
-  const curl = (x, y, t) => {
-    const e = 0.004;
-    const s = config.noiseScale;
-    const psi = (px, py) => fbm3(px * s, py * s, t);
-    const dpdy = (psi(x, y + e) - psi(x, y - e)) / (2 * e);
-    const dpdx = (psi(x + e, y) - psi(x - e, y)) / (2 * e);
-    return [dpdy, -dpdx];
+  // Left alone the solver decays to a still field within a few seconds, so it
+  // has to be driven — and driving it with a noise field would put the noise
+  // straight back into the piece. Instead it gets a vortex lattice whose phases
+  // wander on incommensurate periods: deterministic, never repeating, and with
+  // no net circulation to spin the whole frame into one slow orbit.
+  let stirTime = 0;
+
+  const stir = (dt) => {
+    stirTime += dt * config.stirSpeed;
+
+    const t = stirTime;
+    const phaseA = [Math.sin(t * 0.21) * 2.0 + t * 0.05, Math.cos(t * 0.17) * 2.0 - t * 0.037];
+    const phaseB = [Math.cos(t * 0.083) * 2.6 - t * 0.031, Math.sin(t * 0.11) * 2.6 + t * 0.043];
+
+    // Scaled by dt so the injected momentum is the same at any frame rate.
+    fluid.stir(config.stirForce * dt, config.stirScale, phaseA, phaseB);
   };
 
-  // Integrating the curl field as a velocity lets the point loiter and double
-  // back, and every reversal flickers a whole ring of cells in and out. The
-  // path is therefore driven by three epicycles instead. Their frequency ratios
-  // are irrational, so the curve never repeats and fills the frame; and because
-  // r0*f0 exceeds r1*f1 + r2*f2, the tangential speed has a positive lower
-  // bound — the point can never stall or reverse, whatever the phases do.
-  const EPI = [
-    { r: 0.26, f: 1.0, p: 0.0 },
-    { r: 0.15, f: 0.6180339887, p: 1.7 },
-    { r: 0.09, f: 0.2545, p: 4.1 },
-  ];
+  // --- Pointer ----------------------------------------------------------------
 
-  const stepAttractor = (dt, aspect) => {
-    phase += dt * config.speed;
+  const pointer = new PointerInput(canvas);
+  const pointerVelocity = { x: 0, y: 0 };
 
-    const TAU = Math.PI * 2;
-    let bx = 0.5;
-    let by = 0.5;
-    for (const e of EPI) {
-      const a = TAU * phase * e.f + e.p;
-      bx += e.r * Math.cos(a);
-      by += e.r * Math.sin(a);
+  pointer.onMove(() => {
+    const raw = pointer.getNormalizedVelocity();
+    pointerVelocity.x += (raw.x * 0.5 - pointerVelocity.x) * 0.2;
+    pointerVelocity.y += (raw.y * 0.5 - pointerVelocity.y) * 0.2;
+  });
+
+  const pushPointer = () => {
+    pointerVelocity.x *= 0.85;
+    pointerVelocity.y *= 0.85;
+
+    const speed = Math.hypot(pointerVelocity.x, pointerVelocity.y);
+    if (speed < 0.0001 || !pointer.isInside()) return;
+
+    const pos = pointer.getNormalizedPosition();
+    fluid.addForce(
+      (pos.x + 1) * 0.5,
+      (pos.y + 1) * 0.5,
+      pointerVelocity.x * config.pointerForce,
+      pointerVelocity.y * config.pointerForce,
+      config.pointerSize,
+      canvas.width / canvas.height,
+    );
+  };
+
+  // --- Drifters ---------------------------------------------------------------
+
+  // The quadtree used to be split around a single point running on epicycles,
+  // nudged sideways by a curl-noise field. Both are gone: these points are
+  // tracers in the fluid above, so every bit of motion in the piece now comes
+  // out of the solver.
+  //
+  // Positions are normalised viewport coords, y down — the fluid's UV space is
+  // y up, so both position and velocity flip on the way in and out.
+  const drifters = [];
+  const flow = [0, 0];
+
+  // The solver's walls kill the velocity a little inside the frame, so a
+  // drifter carried into the margin would sit there in dead water — and a
+  // strong enough current would pin it against the frame for good.
+  const EDGE_MARGIN = 0.12;
+  const EDGE_RETURN = 0.35; // viewport widths per second, at the very edge
+
+  const syncDrifters = () => {
+    const count = Math.round(config.drifters);
+
+    while (drifters.length > count) drifters.pop();
+    while (drifters.length < count) {
+      // Golden angle, so any number of drifters starts evenly spread.
+      const a = drifters.length * 2.399963;
+      drifters.push({
+        x: 0.5 + Math.cos(a) * 0.24,
+        y: 0.5 + Math.sin(a) * 0.24,
+        vx: 0,
+        vy: 0,
+        hx: -Math.sin(a), // last heading, kept for the minimum-speed floor
+        hy: Math.cos(a),
+        px: 0,
+        py: 0,
+      });
     }
+  };
 
-    // Raw curl, not a normalised direction: normalising makes the offset snap
-    // to the opposite side whenever the field vector passes through zero.
-    const [ox, oy] = curl(bx * aspect, by, phase * config.timeScale * 8);
+  const stepDrifters = (dt) => {
+    syncDrifters();
 
-    attractor.x = bx + ox * config.wander;
-    attractor.y = by + oy * config.wander;
+    // Exponential approach, so the response is the same at any frame rate.
+    const catchUp = 1 - Math.exp(-dt / Math.max(config.inertia, 1e-3));
+
+    // Fades the flow out of the target velocity across the margin and fades a
+    // return velocity in, so however hard the current pushes outward, a
+    // drifter at the frame edge is only ever asked to head back inward.
+    const contain = (p, target) => {
+      const over = p < EDGE_MARGIN ? EDGE_MARGIN - p : p > 1 - EDGE_MARGIN ? 1 - EDGE_MARGIN - p : 0;
+      if (over === 0) return target;
+      const t = Math.abs(over) / EDGE_MARGIN; // 0 at the margin, 1 at the frame edge
+      return target * (1 - t) + Math.sign(over) * EDGE_RETURN * t;
+    };
+
+    for (const d of drifters) {
+      fluid.velocityAt(d.x, 1 - d.y, flow);
+      const targetX = contain(d.x, flow[0] * config.flowGain);
+      const targetY = contain(d.y, -flow[1] * config.flowGain);
+      d.vx += (targetX - d.vx) * catchUp;
+      d.vy += (targetY - d.vy) * catchUp;
+
+      // A drifter that stops freezes its whole cascade on screen, so keep a
+      // floor on the speed, along whichever way it was last heading.
+      const speed = Math.hypot(d.vx, d.vy);
+      if (speed > 1e-6) {
+        d.hx = d.vx / speed;
+        d.hy = d.vy / speed;
+      }
+      if (speed < config.minSpeed) {
+        d.vx = d.hx * config.minSpeed;
+        d.vy = d.hy * config.minSpeed;
+      }
+
+      d.x = Math.min(Math.max(d.x + d.vx * dt, 0.01), 0.99);
+      d.y = Math.min(Math.max(d.y + d.vy * dt, 0.01), 0.99);
+    }
   };
 
   // --- Quadtree ---------------------------------------------------------------
@@ -312,12 +372,16 @@ export const main = async () => {
   // `ix`/`iy` are the cell's integer coordinates at its own depth, seeded by the
   // root cell — a stable identity, so a cell's digit orientation never flickers
   // as long as the cell exists.
-  const subdivide = (x, y, w, h, depth, ix, iy, ax, ay, ring) => {
+  const subdivide = (x, y, w, h, depth, ix, iy, ring) => {
     if (depth < config.maxDepth) {
-      // Distance from the attractor to the nearest point of this cell.
-      const dx = Math.max(x - ax, 0, ax - (x + w));
-      const dy = Math.max(y - ay, 0, ay - (y + h));
-      const dist = Math.hypot(dx, dy);
+      // Distance from the nearest drifter to the nearest point of this cell.
+      let dist = Infinity;
+      for (const d of drifters) {
+        const dx = Math.max(x - d.px, 0, d.px - (x + w));
+        const dy = Math.max(y - d.py, 0, d.py - (y + h));
+        const cellDist = Math.hypot(dx, dy);
+        if (cellDist < dist) dist = cellDist;
+      }
 
       // Equal-width rings rather than a size-vs-distance ratio: the ratio rule
       // makes every coarse cell close enough to something to keep splitting,
@@ -325,10 +389,10 @@ export const main = async () => {
       if (dist < (config.maxDepth - depth) * ring) {
         const hw = w * 0.5;
         const hh = h * 0.5;
-        subdivide(x, y, hw, hh, depth + 1, ix * 2, iy * 2, ax, ay, ring);
-        subdivide(x + hw, y, hw, hh, depth + 1, ix * 2 + 1, iy * 2, ax, ay, ring);
-        subdivide(x, y + hh, hw, hh, depth + 1, ix * 2, iy * 2 + 1, ax, ay, ring);
-        subdivide(x + hw, y + hh, hw, hh, depth + 1, ix * 2 + 1, iy * 2 + 1, ax, ay, ring);
+        subdivide(x, y, hw, hh, depth + 1, ix * 2, iy * 2, ring);
+        subdivide(x + hw, y, hw, hh, depth + 1, ix * 2 + 1, iy * 2, ring);
+        subdivide(x, y + hh, hw, hh, depth + 1, ix * 2, iy * 2 + 1, ring);
+        subdivide(x + hw, y + hh, hw, hh, depth + 1, ix * 2 + 1, iy * 2 + 1, ring);
         return;
       }
     }
@@ -367,11 +431,20 @@ export const main = async () => {
   treeFolder.open();
 
   const driftFolder = gui.addFolder('Drift');
-  driftFolder.add(config, 'speed', 0, 0.15).step(0.005).name('Sweep Speed');
-  driftFolder.add(config, 'wander', 0, 0.35).step(0.01).name('Wander');
-  driftFolder.add(config, 'noiseScale', 0.1, 2).step(0.05).name('Field Scale');
-  driftFolder.add(config, 'timeScale', 0, 1).step(0.01).name('Field Evolve');
+  driftFolder.add(config, 'drifters', 1, 6).step(1).name('Drifters');
+  driftFolder.add(config, 'flowGain', 0, 1).step(0.01).name('Flow Pickup');
+  driftFolder.add(config, 'inertia', 0.05, 3).step(0.05).name('Inertia (s)');
+  driftFolder.add(config, 'minSpeed', 0, 0.1).step(0.005).name('Min Speed');
   driftFolder.open();
+
+  const fluidFolder = gui.addFolder('Fluid');
+  fluidFolder.add(config, 'stirForce', 0, 6).step(0.05).name('Stir Force');
+  fluidFolder.add(config, 'stirScale', 0.5, 5).step(0.1).name('Vortex Cells');
+  fluidFolder.add(config, 'stirSpeed', 0, 4).step(0.1).name('Stir Speed');
+  fluidFolder.add(config, 'dissipation', 0, 2).step(0.05).name('Flow Fade');
+  fluidFolder.add(config, 'pressureIterations', 1, 40).step(1).name('Pressure Iter');
+  fluidFolder.add(config, 'pointerForce', 0, 4).step(0.1).name('Pointer Force');
+  fluidFolder.open();
 
   const lookFolder = gui.addFolder('Look');
   lookFolder.add(config, 'digitSize', 0.15, 0.9).step(0.01).name('Digit Size');
@@ -388,6 +461,18 @@ export const main = async () => {
 
   // --- Render -----------------------------------------------------------------
 
+  // Spin the solver up before the first frame. Straight from a still field the
+  // drifters would coast on their minimum speed for the first couple of
+  // seconds, which reads as the piece booting rather than as flow.
+  const WARMUP_STEPS = 150;
+  const WARMUP_DT = 1 / 60;
+  syncDrifters();
+  for (let i = 0; i < WARMUP_STEPS; i++) {
+    stir(WARMUP_DT);
+    fluid.step(WARMUP_DT, config.dissipation, config.pressureIterations);
+  }
+  fluid.readbackSync();
+
   let lastTime = performance.now();
 
   const render = () => {
@@ -400,10 +485,16 @@ export const main = async () => {
     toClipX = 2 / W;
     toClipY = 2 / H;
 
-    stepAttractor(dt, W / H);
+    pushPointer();
+    stir(dt);
+    fluid.step(dt, config.dissipation, config.pressureIterations);
+    fluid.readback();
 
-    const ax = attractor.x * W;
-    const ay = attractor.y * H;
+    stepDrifters(dt);
+    for (const d of drifters) {
+      d.px = d.x * W;
+      d.py = d.y * H;
+    }
 
     // Root grid tiles the canvas exactly. Rows are chosen to make the cells as
     // close to square as the viewport allows — a few percent off square is
@@ -419,7 +510,7 @@ export const main = async () => {
     const ring = config.ringWidth * dpr;
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        subdivide(c * cellW, r * cellH, cellW, cellH, 1, c * 4096, r * 4096, ax, ay, ring);
+        subdivide(c * cellW, r * cellH, cellW, cellH, 1, c * 4096, r * 4096, ring);
       }
     }
 
