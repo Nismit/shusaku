@@ -48,16 +48,21 @@ export const main = async () => {
   const config = {
     maxDepth: 6,         // depth 1 stays blank, so this is digit 5 at the core
     rootCols: 3,
-    ringWidth: 80,       // CSS px of radius per depth level
+    inkThreshold: 0.02,  // ink a depth 1 cell needs to split
+    inkFalloff: 2.2,     // how much more ink each level down demands
     emptyChance: 0.28,   // share of cells that stay blank at any depth
     digitSize: 0.52,     // digit height as a fraction of its cell
     lineWidth: 1.0,      // CSS px
     lineAlpha: 0.3,
     textAlpha: 0.95,
-    drifters: 1,         // tracers carried by the fluid, one cascade each
-    flowGain: 0.2,       // how much of the fluid's speed a drifter takes on
-    inertia: 0.4,        // seconds a drifter takes to match the flow
-    minSpeed: 0.02,      // viewport widths per second, never fully still
+    sources: 1,          // ink sources carried by the fluid
+    inkAmount: 120,      // ink laid down per viewport width travelled
+    inkSize: 0.02,       // source radius, fraction of the viewport
+    inkFade: 0.15,       // ink decay per second — sets the length of the trail
+    flowGain: 0.3,       // how much of the fluid's speed a source takes on
+    centrePull: 0.15,    // inward bias, per second, at the frame edge
+    inertia: 0.4,        // seconds a source takes to match the flow
+    minSpeed: 0.05,      // viewport widths per second, never fully still
     stirForce: 1.6,      // lattice forcing, UV per second squared
     stirScale: 0.9,      // vortex cells across the frame
     stirSpeed: 1.0,      // how fast the lattice phases wander
@@ -180,6 +185,12 @@ export const main = async () => {
   // Pixel space (y-down, physical pixels) → clip space.
   let toClipX = 0;
   let toClipY = 0;
+  let viewW = 1;
+  let viewH = 1;
+
+  // Ink a cell must hold to keep splitting, by depth. Rebuilt per frame from
+  // the two GUI knobs.
+  const thresholds = [];
 
   const pushLineRect = (x0, y0, x1, y1) => {
     lineStream.reserve(12);
@@ -287,53 +298,51 @@ export const main = async () => {
     );
   };
 
-  // --- Drifters ---------------------------------------------------------------
+  // --- Ink sources ------------------------------------------------------------
 
   // The quadtree used to be split around a single point running on epicycles,
   // nudged sideways by a curl-noise field. Both are gone: these points are
-  // tracers in the fluid above, so every bit of motion in the piece now comes
-  // out of the solver.
+  // tracers in the fluid above, and all they do now is lay down ink for the
+  // flow to carry — the streak it leaves is what the tree actually splits on.
   //
   // Positions are normalised viewport coords, y down — the fluid's UV space is
   // y up, so both position and velocity flip on the way in and out.
-  const drifters = [];
+  const sources = [];
   const flow = [0, 0];
 
-  // The solver's walls kill the velocity a little inside the frame, so a
-  // drifter carried into the margin would sit there in dead water — and a
-  // strong enough current would pin it against the frame for good.
-  const EDGE_MARGIN = 0.12;
+  // The solver's walls kill the velocity a little inside the frame, so a source
+  // carried into the margin would sit there in dead water — and a strong enough
+  // current would pin it against the frame for good.
+  const EDGE_MARGIN = 0.2;
   const EDGE_RETURN = 0.35; // viewport widths per second, at the very edge
 
-  const syncDrifters = () => {
-    const count = Math.round(config.drifters);
+  const syncSources = () => {
+    const count = Math.round(config.sources);
 
-    while (drifters.length > count) drifters.pop();
-    while (drifters.length < count) {
-      // Golden angle, so any number of drifters starts evenly spread.
-      const a = drifters.length * 2.399963;
-      drifters.push({
+    while (sources.length > count) sources.pop();
+    while (sources.length < count) {
+      // Golden angle, so any number of sources starts evenly spread.
+      const a = sources.length * 2.399963;
+      sources.push({
         x: 0.5 + Math.cos(a) * 0.24,
         y: 0.5 + Math.sin(a) * 0.24,
         vx: 0,
         vy: 0,
         hx: -Math.sin(a), // last heading, kept for the minimum-speed floor
         hy: Math.cos(a),
-        px: 0,
-        py: 0,
       });
     }
   };
 
-  const stepDrifters = (dt) => {
-    syncDrifters();
+  const stepSources = (dt) => {
+    syncSources();
 
     // Exponential approach, so the response is the same at any frame rate.
     const catchUp = 1 - Math.exp(-dt / Math.max(config.inertia, 1e-3));
 
     // Fades the flow out of the target velocity across the margin and fades a
-    // return velocity in, so however hard the current pushes outward, a
-    // drifter at the frame edge is only ever asked to head back inward.
+    // return velocity in, so however hard the current pushes outward, a source
+    // at the frame edge is only ever asked to head back inward.
     const contain = (p, target) => {
       const over = p < EDGE_MARGIN ? EDGE_MARGIN - p : p > 1 - EDGE_MARGIN ? 1 - EDGE_MARGIN - p : 0;
       if (over === 0) return target;
@@ -341,27 +350,49 @@ export const main = async () => {
       return target * (1 - t) + Math.sign(over) * EDGE_RETURN * t;
     };
 
-    for (const d of drifters) {
-      fluid.velocityAt(d.x, 1 - d.y, flow);
-      const targetX = contain(d.x, flow[0] * config.flowGain);
-      const targetY = contain(d.y, -flow[1] * config.flowGain);
-      d.vx += (targetX - d.vx) * catchUp;
-      d.vy += (targetY - d.vy) * catchUp;
+    for (const s of sources) {
+      fluid.velocityAt(s.x, 1 - s.y, flow);
 
-      // A drifter that stops freezes its whole cascade on screen, so keep a
-      // floor on the speed, along whichever way it was last heading.
-      const speed = Math.hypot(d.vx, d.vy);
+      // A tracer with any inertia gets centrifuged out of the vortex cores and
+      // ends up loitering against the frame — measured at 78% of the time in
+      // the outer band, which puts the ribbon half off-screen most of the run.
+      // A weak pull toward the middle costs nothing in the frame's interior,
+      // where it is smallest, and the flow still decides where the source goes.
+      const pullX = (0.5 - s.x) * config.centrePull;
+      const pullY = (0.5 - s.y) * config.centrePull;
+
+      const targetX = contain(s.x, flow[0] * config.flowGain + pullX);
+      const targetY = contain(s.y, -flow[1] * config.flowGain + pullY);
+      s.vx += (targetX - s.vx) * catchUp;
+      s.vy += (targetY - s.vy) * catchUp;
+
+      // A source that stops lays a static blot, so keep a floor on the speed,
+      // along whichever way it was last heading.
+      const speed = Math.hypot(s.vx, s.vy);
       if (speed > 1e-6) {
-        d.hx = d.vx / speed;
-        d.hy = d.vy / speed;
+        s.hx = s.vx / speed;
+        s.hy = s.vy / speed;
       }
       if (speed < config.minSpeed) {
-        d.vx = d.hx * config.minSpeed;
-        d.vy = d.hy * config.minSpeed;
+        s.vx = s.hx * config.minSpeed;
+        s.vy = s.hy * config.minSpeed;
       }
 
-      d.x = Math.min(Math.max(d.x + d.vx * dt, 0.01), 0.99);
-      d.y = Math.min(Math.max(d.y + d.vy * dt, 0.01), 0.99);
+      s.x = Math.min(Math.max(s.x + s.vx * dt, 0.01), 0.99);
+      s.y = Math.min(Math.max(s.y + s.vy * dt, 0.01), 0.99);
+    }
+  };
+
+  const layInk = (dt) => {
+    const aspect = canvas.width / canvas.height;
+    for (const s of sources) {
+      // Ink per unit distance travelled, not per unit time. Charged by the
+      // second, a source loitering in slow water pools into a saturated blot —
+      // which is the round shape the fluid was brought in to replace. Per
+      // distance it draws like a pen, and the ribbon comes out an even weight
+      // whether the flow is racing or barely moving.
+      const travelled = Math.hypot(s.vx, s.vy) * dt;
+      fluid.addInk(s.x, 1 - s.y, config.inkAmount * travelled, config.inkSize, aspect);
     }
   };
 
@@ -372,27 +403,22 @@ export const main = async () => {
   // `ix`/`iy` are the cell's integer coordinates at its own depth, seeded by the
   // root cell — a stable identity, so a cell's digit orientation never flickers
   // as long as the cell exists.
-  const subdivide = (x, y, w, h, depth, ix, iy, ring) => {
+  const subdivide = (x, y, w, h, depth, ix, iy) => {
     if (depth < config.maxDepth) {
-      // Distance from the nearest drifter to the nearest point of this cell.
-      let dist = Infinity;
-      for (const d of drifters) {
-        const dx = Math.max(x - d.px, 0, d.px - (x + w));
-        const dy = Math.max(y - d.py, 0, d.py - (y + h));
-        const cellDist = Math.hypot(dx, dy);
-        if (cellDist < dist) dist = cellDist;
-      }
+      // The tree used to split inside a fixed radius of the source, which drew
+      // a circle around it however the fluid was moving. It splits on the ink
+      // instead: the deeper the level, the more ink the cell has to hold, so
+      // the cascade runs deep in the fresh head of the trail and shallows out
+      // along the streak the flow has smeared behind it.
+      const ink = fluid.inkMaxIn(x / viewW, 1 - (y + h) / viewH, (x + w) / viewW, 1 - y / viewH);
 
-      // Equal-width rings rather than a size-vs-distance ratio: the ratio rule
-      // makes every coarse cell close enough to something to keep splitting,
-      // so depth 1 — the blank level — never actually survives on screen.
-      if (dist < (config.maxDepth - depth) * ring) {
+      if (ink > thresholds[depth]) {
         const hw = w * 0.5;
         const hh = h * 0.5;
-        subdivide(x, y, hw, hh, depth + 1, ix * 2, iy * 2, ring);
-        subdivide(x + hw, y, hw, hh, depth + 1, ix * 2 + 1, iy * 2, ring);
-        subdivide(x, y + hh, hw, hh, depth + 1, ix * 2, iy * 2 + 1, ring);
-        subdivide(x + hw, y + hh, hw, hh, depth + 1, ix * 2 + 1, iy * 2 + 1, ring);
+        subdivide(x, y, hw, hh, depth + 1, ix * 2, iy * 2);
+        subdivide(x + hw, y, hw, hh, depth + 1, ix * 2 + 1, iy * 2);
+        subdivide(x, y + hh, hw, hh, depth + 1, ix * 2, iy * 2 + 1);
+        subdivide(x + hw, y + hh, hw, hh, depth + 1, ix * 2 + 1, iy * 2 + 1);
         return;
       }
     }
@@ -426,13 +452,18 @@ export const main = async () => {
   const treeFolder = gui.addFolder('Quadtree');
   treeFolder.add(config, 'maxDepth', 3, 9).step(1).name('Max Depth');
   treeFolder.add(config, 'rootCols', 1, 6).step(1).name('Root Columns');
-  treeFolder.add(config, 'ringWidth', 30, 300).step(5).name('Ring Width (px)');
+  treeFolder.add(config, 'inkThreshold', 0.005, 0.2).step(0.005).name('Split Ink');
+  treeFolder.add(config, 'inkFalloff', 1.2, 4).step(0.05).name('Depth Falloff');
   treeFolder.add(config, 'emptyChance', 0, 0.7).step(0.01).name('Empty Cells');
   treeFolder.open();
 
-  const driftFolder = gui.addFolder('Drift');
-  driftFolder.add(config, 'drifters', 1, 6).step(1).name('Drifters');
+  const driftFolder = gui.addFolder('Ink');
+  driftFolder.add(config, 'sources', 1, 6).step(1).name('Sources');
+  driftFolder.add(config, 'inkAmount', 10, 400).step(5).name('Ink Density');
+  driftFolder.add(config, 'inkSize', 0.005, 0.15).step(0.005).name('Ink Size');
+  driftFolder.add(config, 'inkFade', 0.02, 2).step(0.01).name('Trail Fade');
   driftFolder.add(config, 'flowGain', 0, 1).step(0.01).name('Flow Pickup');
+  driftFolder.add(config, 'centrePull', 0, 0.6).step(0.01).name('Centre Pull');
   driftFolder.add(config, 'inertia', 0.05, 3).step(0.05).name('Inertia (s)');
   driftFolder.add(config, 'minSpeed', 0, 0.1).step(0.005).name('Min Speed');
   driftFolder.open();
@@ -462,14 +493,20 @@ export const main = async () => {
   // --- Render -----------------------------------------------------------------
 
   // Spin the solver up before the first frame. Straight from a still field the
-  // drifters would coast on their minimum speed for the first couple of
-  // seconds, which reads as the piece booting rather than as flow.
-  const WARMUP_STEPS = 150;
+  // sources would coast on their minimum speed for the first couple of seconds
+  // with no trail behind them, which reads as the piece booting rather than as
+  // flow. The last stretch lays ink, so there is already a streak on frame one.
+  const WARMUP_STEPS = 300;
+  const WARMUP_INK_STEPS = 240;
   const WARMUP_DT = 1 / 60;
-  syncDrifters();
+  syncSources();
   for (let i = 0; i < WARMUP_STEPS; i++) {
     stir(WARMUP_DT);
-    fluid.step(WARMUP_DT, config.dissipation, config.pressureIterations);
+    if (i >= WARMUP_STEPS - WARMUP_INK_STEPS) {
+      stepSources(WARMUP_DT);
+      layInk(WARMUP_DT);
+    }
+    fluid.step(WARMUP_DT, config.dissipation, config.pressureIterations, config.inkFade);
   }
   fluid.readbackSync();
 
@@ -485,15 +522,19 @@ export const main = async () => {
     toClipX = 2 / W;
     toClipY = 2 / H;
 
+    viewW = W;
+    viewH = H;
+
     pushPointer();
     stir(dt);
-    fluid.step(dt, config.dissipation, config.pressureIterations);
+    layInk(dt);
+    fluid.step(dt, config.dissipation, config.pressureIterations, config.inkFade);
     fluid.readback();
 
-    stepDrifters(dt);
-    for (const d of drifters) {
-      d.px = d.x * W;
-      d.py = d.y * H;
+    stepSources(dt);
+
+    for (let depth = 1; depth <= config.maxDepth; depth++) {
+      thresholds[depth] = config.inkThreshold * Math.pow(config.inkFalloff, depth - 1);
     }
 
     // Root grid tiles the canvas exactly. Rows are chosen to make the cells as
@@ -507,10 +548,9 @@ export const main = async () => {
     lineStream.reset();
     glyphStream.reset();
 
-    const ring = config.ringWidth * dpr;
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        subdivide(c * cellW, r * cellH, cellW, cellH, 1, c * 4096, r * 4096, ring);
+        subdivide(c * cellW, r * cellH, cellW, cellH, 1, c * 4096, r * 4096);
       }
     }
 
