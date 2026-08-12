@@ -54,12 +54,12 @@ export const main = async () => {
     lineWidth: 1.0,      // CSS px
     lineAlpha: 0.3,
     textAlpha: 0.95,
-    drifters: 2,         // tracers carried by the fluid, one cascade each
-    flowGain: 0.3,       // how much of the fluid's speed a drifter takes on
+    drifters: 1,         // tracers carried by the fluid, one cascade each
+    flowGain: 0.2,       // how much of the fluid's speed a drifter takes on
     inertia: 0.4,        // seconds a drifter takes to match the flow
     minSpeed: 0.02,      // viewport widths per second, never fully still
     stirForce: 1.6,      // lattice forcing, UV per second squared
-    stirScale: 1.6,      // vortex cells across the frame
+    stirScale: 0.9,      // vortex cells across the frame
     stirSpeed: 1.0,      // how fast the lattice phases wander
     dissipation: 0.15,   // velocity decay per second
     pressureIterations: 20,
