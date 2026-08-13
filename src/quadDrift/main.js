@@ -55,7 +55,8 @@ export const main = async () => {
     lineWidth: 1.0,      // CSS px
     lineAlpha: 0.3,
     textAlpha: 0.95,
-    sources: 1,          // ink sources carried by the fluid
+    autoDrift: false,    // let the piece stir itself and lay its own ink
+    sources: 1,          // ink sources carried by the fluid, when it does
     inkAmount: 120,      // ink laid down per viewport width travelled
     inkSize: 0.02,       // source radius, fraction of the viewport
     inkFade: 0.15,       // ink decay per second — sets the length of the trail
@@ -68,7 +69,7 @@ export const main = async () => {
     stirSpeed: 1.0,      // how fast the lattice phases wander
     dissipation: 0.15,   // velocity decay per second
     pressureIterations: 20,
-    pointerForce: 1.2,
+    pointerForce: 15,    // velocity injected per viewport width swiped
     pointerSize: 0.05,   // pointer splat radius, fraction of the viewport
     grain: 0.03,
     grainScale: 1.5,     // grain cell size in CSS px
@@ -272,30 +273,61 @@ export const main = async () => {
   // --- Pointer ----------------------------------------------------------------
 
   const pointer = new PointerInput(canvas);
-  const pointerVelocity = { x: 0, y: 0 };
+  const stroke = { x: 0, y: 0, valid: false };
+  const breakStroke = () => { stroke.valid = false; };
 
-  pointer.onMove(() => {
-    const raw = pointer.getNormalizedVelocity();
-    pointerVelocity.x += (raw.x * 0.5 - pointerVelocity.x) * 0.2;
-    pointerVelocity.y += (raw.y * 0.5 - pointerVelocity.y) * 0.2;
-  });
+  pointer.onPress(breakStroke);
+  pointer.onRelease(breakStroke);
+  pointer.onEnter(breakStroke);
+  pointer.onLeave(breakStroke);
 
+  // Longest jump still treated as one continuous stroke. Anything further is a
+  // teleport — a finger landing somewhere new, the cursor re-entering the
+  // canvas — and dragging the fluid along that line fires a splat across half
+  // the frame.
+  const MAX_STROKE = 0.25;
+
+  // Swiping is the piece's main input: the pointer both shoves the velocity
+  // field and lays ink, the way the fluid sketches in this repo splat velocity
+  // and dye together. Both are charged per unit distance rather than per frame,
+  // so a stroke lands the same weight however fast it is drawn and whatever the
+  // frame rate.
   const pushPointer = () => {
-    pointerVelocity.x *= 0.85;
-    pointerVelocity.y *= 0.85;
-
-    const speed = Math.hypot(pointerVelocity.x, pointerVelocity.y);
-    if (speed < 0.0001 || !pointer.isInside()) return;
+    if (!pointer.isInside()) {
+      stroke.valid = false;
+      return;
+    }
 
     const pos = pointer.getNormalizedPosition();
-    fluid.addForce(
-      (pos.x + 1) * 0.5,
-      (pos.y + 1) * 0.5,
-      pointerVelocity.x * config.pointerForce,
-      pointerVelocity.y * config.pointerForce,
-      config.pointerSize,
-      canvas.width / canvas.height,
-    );
+    const x = (pos.x + 1) * 0.5; // fluid UV, y already up
+    const y = (pos.y + 1) * 0.5;
+
+    const fromX = stroke.x;
+    const fromY = stroke.y;
+    const first = !stroke.valid;
+    stroke.x = x;
+    stroke.y = y;
+    stroke.valid = true;
+    if (first) return;
+
+    const dx = x - fromX;
+    const dy = y - fromY;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 1e-5 || distance > MAX_STROKE) return;
+
+    const aspect = canvas.width / canvas.height;
+    // Walk the segment: a fast swipe covers more ground between frames than one
+    // splat is wide, and would otherwise come out as a dotted line.
+    const steps = Math.min(8, Math.ceil(distance / Math.max(config.inkSize * 0.6, 1e-3)));
+    const share = 1 / steps;
+
+    for (let i = 1; i <= steps; i++) {
+      const t = i * share;
+      const px = fromX + dx * t;
+      const py = fromY + dy * t;
+      fluid.addForce(px, py, dx * config.pointerForce * share, dy * config.pointerForce * share, config.pointerSize, aspect);
+      fluid.addInk(px, py, config.inkAmount * distance * share, config.inkSize, aspect);
+    }
   };
 
   // --- Ink sources ------------------------------------------------------------
@@ -457,25 +489,32 @@ export const main = async () => {
   treeFolder.add(config, 'emptyChance', 0, 0.7).step(0.01).name('Empty Cells');
   treeFolder.open();
 
-  const driftFolder = gui.addFolder('Ink');
-  driftFolder.add(config, 'sources', 1, 6).step(1).name('Sources');
-  driftFolder.add(config, 'inkAmount', 10, 400).step(5).name('Ink Density');
-  driftFolder.add(config, 'inkSize', 0.005, 0.15).step(0.005).name('Ink Size');
-  driftFolder.add(config, 'inkFade', 0.02, 2).step(0.01).name('Trail Fade');
-  driftFolder.add(config, 'flowGain', 0, 1).step(0.01).name('Flow Pickup');
-  driftFolder.add(config, 'centrePull', 0, 0.6).step(0.01).name('Centre Pull');
-  driftFolder.add(config, 'inertia', 0.05, 3).step(0.05).name('Inertia (s)');
-  driftFolder.add(config, 'minSpeed', 0, 0.1).step(0.005).name('Min Speed');
-  driftFolder.open();
+  const inkFolder = gui.addFolder('Ink');
+  inkFolder.add(config, 'inkAmount', 10, 400).step(5).name('Ink Density');
+  inkFolder.add(config, 'inkSize', 0.005, 0.15).step(0.005).name('Ink Size');
+  inkFolder.add(config, 'inkFade', 0.02, 2).step(0.01).name('Trail Fade');
+  inkFolder.open();
+
+  const pointerFolder = gui.addFolder('Pointer');
+  pointerFolder.add(config, 'pointerForce', 0, 60).step(1).name('Swipe Force');
+  pointerFolder.add(config, 'pointerSize', 0.005, 0.2).step(0.005).name('Swipe Size');
+  pointerFolder.open();
 
   const fluidFolder = gui.addFolder('Fluid');
-  fluidFolder.add(config, 'stirForce', 0, 6).step(0.05).name('Stir Force');
-  fluidFolder.add(config, 'stirScale', 0.5, 5).step(0.1).name('Vortex Cells');
-  fluidFolder.add(config, 'stirSpeed', 0, 4).step(0.1).name('Stir Speed');
   fluidFolder.add(config, 'dissipation', 0, 2).step(0.05).name('Flow Fade');
   fluidFolder.add(config, 'pressureIterations', 1, 40).step(1).name('Pressure Iter');
-  fluidFolder.add(config, 'pointerForce', 0, 4).step(0.1).name('Pointer Force');
   fluidFolder.open();
+
+  // Everything below drives the piece with no one at the pointer.
+  const autoFolder = gui.addFolder('Auto Drift');
+  autoFolder.add(config, 'autoDrift').name('Enabled');
+  autoFolder.add(config, 'sources', 1, 6).step(1).name('Sources');
+  autoFolder.add(config, 'flowGain', 0, 1).step(0.01).name('Flow Pickup');
+  autoFolder.add(config, 'inertia', 0.05, 3).step(0.05).name('Inertia (s)');
+  autoFolder.add(config, 'minSpeed', 0, 0.1).step(0.005).name('Min Speed');
+  autoFolder.add(config, 'stirForce', 0, 6).step(0.05).name('Stir Force');
+  autoFolder.add(config, 'stirScale', 0.5, 5).step(0.1).name('Vortex Cells');
+  autoFolder.add(config, 'stirSpeed', 0, 4).step(0.1).name('Stir Speed');
 
   const lookFolder = gui.addFolder('Look');
   lookFolder.add(config, 'digitSize', 0.15, 0.9).step(0.01).name('Digit Size');
@@ -492,21 +531,25 @@ export const main = async () => {
 
   // --- Render -----------------------------------------------------------------
 
-  // Spin the solver up before the first frame. Straight from a still field the
-  // sources would coast on their minimum speed for the first couple of seconds
-  // with no trail behind them, which reads as the piece booting rather than as
-  // flow. The last stretch lays ink, so there is already a streak on frame one.
+  // Under its own power the piece needs the solver spun up before the first
+  // frame: straight from a still field the sources coast on their minimum speed
+  // for the first couple of seconds with no trail behind them, which reads as
+  // the piece booting rather than as flow. Waiting on a swipe there is nothing
+  // to warm up — the frame starts bare and fills in under the pointer.
   const WARMUP_STEPS = 300;
   const WARMUP_INK_STEPS = 240;
   const WARMUP_DT = 1 / 60;
-  syncSources();
-  for (let i = 0; i < WARMUP_STEPS; i++) {
-    stir(WARMUP_DT);
-    if (i >= WARMUP_STEPS - WARMUP_INK_STEPS) {
-      stepSources(WARMUP_DT);
-      layInk(WARMUP_DT);
+
+  if (config.autoDrift) {
+    syncSources();
+    for (let i = 0; i < WARMUP_STEPS; i++) {
+      stir(WARMUP_DT);
+      if (i >= WARMUP_STEPS - WARMUP_INK_STEPS) {
+        stepSources(WARMUP_DT);
+        layInk(WARMUP_DT);
+      }
+      fluid.step(WARMUP_DT, config.dissipation, config.pressureIterations, config.inkFade);
     }
-    fluid.step(WARMUP_DT, config.dissipation, config.pressureIterations, config.inkFade);
   }
   fluid.readbackSync();
 
@@ -526,12 +569,15 @@ export const main = async () => {
     viewH = H;
 
     pushPointer();
-    stir(dt);
-    layInk(dt);
+
+    if (config.autoDrift) {
+      stir(dt);
+      stepSources(dt);
+      layInk(dt);
+    }
+
     fluid.step(dt, config.dissipation, config.pressureIterations, config.inkFade);
     fluid.readback();
-
-    stepSources(dt);
 
     for (let depth = 1; depth <= config.maxDepth; depth++) {
       thresholds[depth] = config.inkThreshold * Math.pow(config.inkFalloff, depth - 1);

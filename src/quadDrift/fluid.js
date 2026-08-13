@@ -3,7 +3,6 @@ import splatFrag from './shaders/splat.frag?raw';
 import divergenceFrag from './shaders/divergence.frag?raw';
 import pressureFrag from './shaders/pressure.frag?raw';
 import gradientFrag from './shaders/gradient.frag?raw';
-import blurFrag from './shaders/blur.frag?raw';
 import stirFrag from './shaders/stir.frag?raw';
 import probeFrag from './shaders/probe.frag?raw';
 import inkProbeFrag from './shaders/inkProbe.frag?raw';
@@ -15,6 +14,12 @@ import inkProbeFrag from './shaders/inkProbe.frag?raw';
 // dye to tell the tree where to split.
 //
 // Coordinates are simulation UV: 0..1 on both axes, y up, square grid.
+//
+// One pass from those sketches is missing: the Gaussian blur they run over the
+// velocity each frame as a stand-in for viscosity. It is applied per frame
+// rather than per second, so the swirl a swipe leaves behind would die several
+// times faster on a 120Hz display than on a 30Hz one — and this piece is meant
+// to keep turning over long after the finger has left.
 
 // Velocity that maps to the ends of the encoded range. Anything faster clips,
 // which only means a source briefly stops accelerating — far better than
@@ -47,7 +52,6 @@ export const createFluid = (cgl, options = {}) => {
   const divergenceShader = cgl.createShader({ fragment: divergenceFrag });
   const pressureShader = cgl.createShader({ fragment: pressureFrag });
   const gradientShader = cgl.createShader({ fragment: gradientFrag });
-  const blurShader = cgl.createShader({ fragment: blurFrag });
   const stirShader = cgl.createShader({ fragment: stirFrag });
   const probeShader = cgl.createShader({ fragment: probeFrag });
   const inkProbeShader = cgl.createShader({ fragment: inkProbeFrag });
@@ -112,13 +116,6 @@ export const createFluid = (cgl, options = {}) => {
       uDissipation: dissipation,
       uTexelSize: texel,
     });
-    velocity.swap();
-
-    // Separable Gaussian, standing in for viscosity: it keeps the field smooth
-    // enough that the probe's downsample is not aliasing sharp vortices.
-    velocity.write.pass(blurShader, { uTexture: velocity.read, uTexelSize: texel, uDirection: [1, 0] });
-    velocity.swap();
-    velocity.write.pass(blurShader, { uTexture: velocity.read, uTexelSize: texel, uDirection: [0, 1] });
     velocity.swap();
 
     divergence.pass(divergenceShader, { uVelocity: velocity.read, uTexelSize: texel });
