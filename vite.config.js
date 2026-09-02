@@ -25,6 +25,7 @@ export default defineConfig({
         magneticField: resolve(__dirname, 'src/magneticField/index.html'),
         halftoneFlow: resolve(__dirname, 'src/halftoneFlow/index.html'),
         chromaCountdown: resolve(__dirname, 'src/chromaCountdown/index.html'),
+        gearCascade: resolve(__dirname, 'src/gearCascade/index.html'),
       },
     },
   },
